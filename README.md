@@ -2,6 +2,8 @@
 
 A fast, offline-first, Markdown-based note-taking app.
 
+![Ato](documentation/app-demo.webp)
+
 
 ## Development
 
