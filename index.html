@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <title>Ato</title>
+
+  <!-- Prevent flash of wrong background color on load -->
+  <style>
+    html, body {
+      background-color: white;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html, body {
+        background-color: #1b1a29;
+      }
+    }
+  </style>
+</head>
+
+<body class="text-base">
+<div id="root"></div>
+<div id="react-portal"></div>
+<script type="module" src="/src/font-size.ts"></script>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

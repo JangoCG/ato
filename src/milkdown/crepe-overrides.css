@@ -1,0 +1,49 @@
+:root[data-resolved-appearance='light'] .milkdown,
+:root[data-resolved-appearance='dark'] .milkdown {
+  --crepe-color-background: var(--surface);
+  --crepe-color-surface: var(--surfaceHighlight);
+  --crepe-color-surface-low: var(--surfaceHighlight);
+  --crepe-color-on-background: var(--text);
+  --crepe-color-on-surface: var(--text);
+  --crepe-color-on-surface-variant: var(--textSubtle);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--text);
+  --crepe-color-secondary: var(--surfaceHighlight);
+  --crepe-color-on-secondary: var(--text);
+  --crepe-color-inverse: var(--text);
+  --crepe-color-on-inverse: var(--surface);
+  --crepe-color-inline-code: var(--text);
+  --crepe-color-error: var(--danger);
+  --crepe-color-hover: var(--surfaceHighlight);
+  --crepe-color-selected: var(--surfaceHighlight);
+  --crepe-color-inline-area: var(--surfaceHighlight);
+
+  --crepe-font-title: var(--font-family-interface);
+  --crepe-font-default: var(--font-family-interface);
+  --crepe-font-code: var(--font-family-editor);
+  --crepe-shadow-1: 0 1px 2px 0 var(--shadow);
+  --crepe-shadow-2: 0 2px 6px 0 var(--shadow);
+}
+
+.milkdown {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.milkdown .editor ul,
+.milkdown .editor ol {
+  padding-left: 1.4em;
+  margin: 0 0 1em;
+}
+
+.milkdown .editor ul {
+  list-style: disc;
+}
+
+.milkdown .editor ol {
+  list-style: decimal;
+}
+
+.milkdown .editor li::marker {
+  color: var(--text);
+}
