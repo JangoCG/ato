@@ -1,6 +1,6 @@
 # Ato
 
-A fast, offline-first, Markdown-based note-taking app.
+A fast,offline first and Markdown based note taking app.
 
 ![Ato](documentation/app-demo.webp)
 
