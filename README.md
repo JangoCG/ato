@@ -5,6 +5,11 @@ A fast, offline-first, Markdown-based note-taking app.
 ![Ato](documentation/app-demo.webp)
 
 
+## Installation
+
+[macOS](https://github.com/JangoCG/ato/releases) — other platforms coming soon™
+
+
 ## Development
 
 You are welcome to modify Ato to your liking.
