@@ -71,7 +71,7 @@ export function SettingsMenu({ version, onOpenSettings, children }: SettingsMenu
         label: "Feedback",
         icon: <MessageSquare className="h-4 w-4" />,
         rightSlot: <ExternalLink className="h-4 w-4" />,
-        onSelect: () => openUrl("https://ato.featurebase.app/"),
+        onSelect: () => openUrl("https://github.com/JangoCG/ato/issues/new"),
       },
     ];
   }, [version]);
