@@ -8,7 +8,8 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Slice } from "@milkdown/prose/model";
 import { File, FolderPlus, Search, Settings } from "lucide-react";
-import { writeTextFile, readTextFile, readDir, mkdir, exists, rename, remove } from "@tauri-apps/plugin-fs";
+import { writeTextFile, readTextFile, readDir, mkdir, exists, rename, remove, writeFile } from "@tauri-apps/plugin-fs";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { SidebarTree } from "./SidebarTree";
@@ -54,12 +55,35 @@ const markdownHeuristics = [
 
 const looksLikeMarkdown = (text: string) => markdownHeuristics.some((pattern) => pattern.test(text));
 
-function MilkdownEditor({ content, onSave }: { content: string; onSave: (markdown: string) => void }) {
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"];
+
+const isImageFile = (path: string) => {
+  const lower = path.toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+};
+
+function MilkdownEditor({
+  content,
+  onSave,
+  onPasteImage,
+  baseDir,
+}: {
+  content: string;
+  onSave: (markdown: string) => void;
+  onPasteImage?: (file: File) => Promise<string | null>;
+  baseDir: string;
+}) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
+  const onPasteImageRef = useRef(onPasteImage);
+  onPasteImageRef.current = onPasteImage;
+
   const contentRef = useRef(content);
   contentRef.current = content;
+
+  const baseDirRef = useRef(baseDir);
+  baseDirRef.current = baseDir;
 
   const didFocusRef = useRef(false);
 
@@ -70,10 +94,63 @@ function MilkdownEditor({ content, onSave }: { content: string; onSave: (markdow
         ctx.set(defaultValueCtx, contentRef.current);
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
+          nodeViews: {
+            ...prev.nodeViews,
+            image: (node) => {
+              const container = document.createElement("span");
+              container.className = "image-wrapper";
+
+              const img = document.createElement("img");
+              const src = node.attrs.src as string;
+
+              // Transform relative paths to asset URLs
+              if (src && !src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("asset://")) {
+                const fullPath = `${baseDirRef.current}/${src}`;
+                img.src = convertFileSrc(fullPath);
+              } else {
+                img.src = src;
+              }
+
+              img.alt = (node.attrs.alt as string) || "";
+              if (node.attrs.title) {
+                img.title = node.attrs.title as string;
+              }
+              img.style.maxWidth = "100%";
+
+              container.appendChild(img);
+              return {
+                dom: container,
+              };
+            },
+          },
           handlePaste: (view, event) => {
             if (prev.handlePaste?.(view, event, Slice.empty)) return true;
             const { clipboardData } = event;
             if (!clipboardData) return false;
+
+            // Check for pasted images first
+            const items = clipboardData.items;
+            for (let i = 0; i < items.length; i++) {
+              const item = items[i];
+              if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file && onPasteImageRef.current) {
+                  event.preventDefault();
+                  onPasteImageRef.current(file).then((relativePath) => {
+                    if (relativePath) {
+                      // Insert as an actual image node
+                      const imageType = view.state.schema.nodes.image;
+                      if (imageType) {
+                        const imageNode = imageType.create({ src: relativePath, alt: "" });
+                        const tr = view.state.tr.replaceSelectionWith(imageNode);
+                        view.dispatch(tr.scrollIntoView());
+                      }
+                    }
+                  });
+                  return true;
+                }
+              }
+            }
 
             const currentNode = view.state.selection.$from.node();
             if (currentNode.type.spec.code) return false;
@@ -141,6 +218,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [content, setContent] = useState(defaultMarkdown);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [settings, setSettings] = useState(getSettings);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const openSettings = useCallback(async () => {
@@ -368,8 +446,16 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
   const openFile = async (path: string) => {
     try {
-      const text = await readTextFile(getFullPath(path));
-      setContent(text);
+      const fullPath = getFullPath(path);
+      if (isImageFile(path)) {
+        const src = convertFileSrc(fullPath);
+        setImageSrc(src);
+        setContent("");
+      } else {
+        const text = await readTextFile(fullPath);
+        setImageSrc(null);
+        setContent(text);
+      }
       setActivePath(path);
       setSelectedId(path);
     } catch (err) {
@@ -395,6 +481,36 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       }
     }, 100);
   }, [ensureAppFolder, getFullPath, loadTree]);
+
+  const handlePasteImage = useCallback(async (file: File): Promise<string | null> => {
+    try {
+      const currentPath = activePathRef.current;
+      const parentDir = getParentDir(currentPath);
+
+      // Generate unique filename with timestamp
+      const timestamp = Date.now();
+      const ext = file.type.split("/")[1] || "png";
+      const filename = `image-${timestamp}.${ext}`;
+
+      // Get the full path for saving
+      const relativePath = parentDir ? `${parentDir}/${filename}` : filename;
+      const fullPath = getFullPath(relativePath);
+
+      // Read file as ArrayBuffer and save
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      await writeFile(fullPath, uint8Array);
+
+      // Refresh the tree to show the new file
+      await loadTree();
+
+      // Return just the filename for the markdown reference
+      return filename;
+    } catch (err) {
+      console.error("Failed to save pasted image:", err);
+      return null;
+    }
+  }, [getFullPath, getParentDir, loadTree]);
 
   const updateActivePath = useCallback((oldPath: string, newPath: string) => {
     const currentActive = activePathRef.current;
@@ -669,9 +785,24 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
         <div className="flex flex-col min-w-0 min-h-0 bg-surface">
           <div className="flex-1 min-h-0 overflow-auto pl-16 prose">
-            <MilkdownProvider key={activePath}>
-              <MilkdownEditor content={content} onSave={saveFile} />
-            </MilkdownProvider>
+            {imageSrc ? (
+              <div className="flex items-center justify-center h-full p-8">
+                <img
+                  src={imageSrc}
+                  alt={getBaseName(activePath)}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+            ) : (
+              <MilkdownProvider key={activePath}>
+                <MilkdownEditor
+                  content={content}
+                  onSave={saveFile}
+                  onPasteImage={handlePasteImage}
+                  baseDir={getFullPath(getParentDir(activePath))}
+                />
+              </MilkdownProvider>
+            )}
           </div>
         </div>
       </div>
