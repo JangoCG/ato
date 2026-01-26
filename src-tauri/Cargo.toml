@@ -1,6 +1,6 @@
 [package]
 name = "ato"
-version = "0.1.15-beta"
+version = "0.1.16-beta"
 description = "A minimal markdown writing app"
 authors = ["you"]
 edition = "2021"
