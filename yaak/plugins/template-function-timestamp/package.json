@@ -1,0 +1,14 @@
+{
+  "name": "@yaak/template-function-timestamp",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "yaakcli build",
+    "dev": "yaakcli dev",
+    "test": "vitest --run tests"
+  },
+  "dependencies": {
+    "@date-fns/tz": "^1.4.1",
+    "date-fns": "^4.1.0"
+  }
+}

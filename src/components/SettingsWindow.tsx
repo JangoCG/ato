@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { FolderOpen, Link, Moon, Palette, Settings as SettingsIcon, Sun } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile, exists } from "@tauri-apps/plugin-fs";
 import { getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
+import { getFolderSettings } from "../lib/useObsidianImport";
 import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
 import type { ResizeHandleEvent } from "./ResizeHandle";
@@ -85,34 +85,8 @@ export function SettingsPage() {
     });
     if (!selected || typeof selected !== "string") return;
 
-    const updates: Partial<AppSettings> = {
-      dataFolder: selected,
-    };
-
     // Auto-detect Obsidian vault and import attachment settings
-    try {
-      const isObsidianVault = await exists(`${selected}/.obsidian`);
-      if (isObsidianVault) {
-        const configText = await readTextFile(`${selected}/.obsidian/app.json`);
-        const config = JSON.parse(configText);
-        const attachmentPath = config.attachmentFolderPath as string | undefined;
-
-        if (!attachmentPath || attachmentPath === "/" || attachmentPath === "") {
-          updates.attachmentLocation = "vault";
-        } else if (attachmentPath === ".") {
-          updates.attachmentLocation = "same";
-        } else if (attachmentPath.startsWith("./")) {
-          updates.attachmentLocation = "subfolder";
-          updates.attachmentSubfolder = attachmentPath.slice(2);
-        } else {
-          updates.attachmentLocation = "specified";
-          updates.attachmentSpecifiedFolder = attachmentPath.replace(/^\//, "");
-        }
-      }
-    } catch (e) {
-      console.log("Could not detect Obsidian vault:", e);
-    }
-
+    const updates = await getFolderSettings(selected);
     updateSettings(updates);
   }, [settings.dataFolder, updateSettings]);
 

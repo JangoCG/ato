@@ -1,0 +1,19 @@
+{
+  "name": "@yaak/template-function-json",
+  "displayName": "JSON Template Functions",
+  "description": "Template functions for working with JSON data",
+  "private": true,
+  "version": "0.1.0",
+  "main": "build/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "yaakcli build",
+    "dev": "yaakcli dev"
+  },
+  "dependencies": {
+    "jsonpath-plus": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/jsonpath": "^0.2.4"
+  }
+}

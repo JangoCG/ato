@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx, parserCtx, editorViewCtx } from "@milkdown/kit/core";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
@@ -17,6 +17,8 @@ import { HeaderSize } from "./components/HeaderSize";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { SetupScreen } from "./components/SetupScreen";
+import type { ResizeHandleEvent } from "./components/ResizeHandle";
+import { ResizeHandle } from "./components/ResizeHandle";
 import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 import {
@@ -265,8 +267,13 @@ function MilkdownEditor({
   return <Milkdown />;
 }
 
+const DEFAULT_SIDEBAR_WIDTH = 240;
+
 function EditorApp({ dataFolder }: { dataFolder: string }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const startWidth = useRef<number | null>(null);
   const [activePath, setActivePath] = useState("Untitled.md");
   const [editingFilename, setEditingFilename] = useState("");
   const [isEditingName, setIsEditingName] = useState(false);
@@ -285,6 +292,37 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       console.error("Failed to open settings window:", err);
     }
   }, []);
+
+  // Resize handlers (yaak style)
+  const handleResizeMove = useCallback(
+    ({ x, xStart }: ResizeHandleEvent) => {
+      if (startWidth.current == null) return;
+      const newWidth = startWidth.current + (x - xStart);
+      if (newWidth < 50) {
+        if (!sidebarHidden) setSidebarHidden(true);
+        setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+      } else {
+        if (sidebarHidden) setSidebarHidden(false);
+        setSidebarWidth(Math.max(150, Math.min(500, newWidth)));
+      }
+    },
+    [sidebarHidden],
+  );
+
+  const handleResizeStart = useCallback(() => {
+    startWidth.current = sidebarWidth;
+    setIsResizing(true);
+  }, [sidebarWidth]);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+    startWidth.current = null;
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+  }, []);
+
   const saveTimeoutRef = useRef<number | null>(null);
   const activePathRef = useRef(activePath);
   activePathRef.current = activePath;
@@ -804,12 +842,28 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
   const displayName = getBaseName(activePath);
 
+  const sideWidth = sidebarHidden ? 0 : sidebarWidth;
+
+  // Grid layout like yaak Workspace
+  const gridStyle = useMemo(
+    () => ({
+      gridTemplate: `
+        'head head head' auto
+        'side drag body' minmax(0,1fr)
+        / ${sideWidth}px 0 1fr`,
+    }),
+    [sideWidth],
+  );
+
   return (
-    <div className="grid grid-rows-[auto_minmax(0,1fr)] h-screen w-full bg-surface text-text overflow-hidden">
-      <HeaderSize size="lg" className="x-theme-appHeader bg-[var(--appHeaderSurface)]">
+    <div
+      style={gridStyle}
+      className={`grid w-full h-screen bg-surface text-text overflow-hidden ${!isResizing ? 'transition-[grid-template]' : ''}`}
+    >
+      <HeaderSize size="lg" className="x-theme-appHeader bg-[var(--appHeaderSurface)]" style={{ gridArea: 'head' }}>
         <WorkspaceHeader
-          sidebarHidden={!sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          sidebarHidden={sidebarHidden}
+          onToggleSidebar={() => setSidebarHidden(!sidebarHidden)}
           title={displayName}
           isEditingTitle={isEditingName}
           editingTitle={editingFilename}
@@ -826,100 +880,111 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         />
       </HeaderSize>
 
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] min-h-0 overflow-hidden">
-        <aside
-          className={`h-full grid grid-rows-[auto_minmax(0,1fr)_auto] min-w-0 flex-shrink-0 overflow-hidden transition-[width] duration-200 bg-[var(--sidebarSurface)] border-r border-[var(--sidebarBorder)] ${
-            sidebarOpen ? "w-60" : "w-0"
-          }`}
-        >
-          <div className="w-full pl-3 pr-0.5 pt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center">
-            <div className="flex items-center gap-2 text-textSubtle">
-              <Search size={14} />
-              <input
-                type="text"
-                className="bg-transparent border-0 outline-none text-[13px] w-full text-text placeholder:text-textSubtlest"
-                value={sidebarFilter}
-                onChange={(event) => setSidebarFilter(event.target.value)}
-                placeholder="Search"
-                aria-label="Filter files"
+      {/* Sidebar */}
+      <aside
+        style={{ gridArea: 'side' }}
+        className="x-theme-sidebar h-full grid grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[var(--sidebarSurface)] border-r border-[var(--sidebarBorder)]"
+      >
+        <div className="w-full pl-3 pr-0.5 pt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center">
+          <div className="flex items-center gap-2 text-textSubtle">
+            <Search size={14} />
+            <input
+              type="text"
+              className="bg-transparent border-0 outline-none text-[13px] w-full text-text placeholder:text-textSubtlest"
+              value={sidebarFilter}
+              onChange={(event) => setSidebarFilter(event.target.value)}
+              placeholder="Search"
+              aria-label="Filter files"
+            />
+          </div>
+          <div className="flex gap-0.5">
+            <button
+              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
+              aria-label="New File"
+              onClick={createNewFile}
+            >
+              <File size={14} />
+            </button>
+            <button
+              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
+              aria-label="New Folder"
+              onClick={createNewFolder}
+            >
+              <FolderPlus size={14} />
+            </button>
+          </div>
+        </div>
+        <nav className="pl-2 pr-3 pt-2 pb-2 overflow-auto overflow-x-hidden">
+          <SidebarTree
+            items={treeItems}
+            collapsedIds={collapsedIds}
+            activeId={selectedId}
+            filterText={sidebarFilter}
+            onSelect={(id) => {
+              const node = findNodeById(treeItems, id);
+              if (!node) return;
+              setSelectedId(id);
+              if (node.type === "file") {
+                openFile(id);
+              }
+            }}
+            onToggleCollapse={toggleCollapse}
+            onItemsChange={handleTreeChange}
+            onRename={renameItem}
+            onDuplicate={duplicateItem}
+            onDelete={deleteItem}
+          />
+        </nav>
+        <SettingsMenu version={appVersion} onOpenSettings={openSettings}>
+          <button
+            className="w-full px-3 h-9 border-t border-border flex items-center justify-between text-textSubtle outline-none hover:bg-surfaceHighlight focus-visible:bg-surfaceHighlight"
+            aria-label="Settings"
+          >
+            <div className="min-w-0 text-sm grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
+              <Settings size={14} />
+              <div className="truncate">Settings</div>
+            </div>
+          </button>
+        </SettingsMenu>
+      </aside>
+
+      {/* Resize Handle */}
+      <ResizeHandle
+        style={{ gridArea: 'drag' }}
+        className="-translate-x-[1px]"
+        justify="end"
+        side="right"
+        onResizeStart={handleResizeStart}
+        onResizeEnd={handleResizeEnd}
+        onResizeMove={handleResizeMove}
+        onReset={resetSidebarWidth}
+      />
+
+      {/* Main Content */}
+      <div style={{ gridArea: 'body' }} className="flex flex-col min-w-0 min-h-0 bg-surface">
+        <div className="flex-1 min-h-0 overflow-auto pl-16 prose">
+          {imageSrc ? (
+            <div className="flex items-center justify-center h-full p-8">
+              <img
+                src={imageSrc}
+                alt={getBaseName(activePath)}
+                className="max-w-full max-h-full object-contain"
               />
             </div>
-            <div className="flex gap-0.5">
-              <button
-                className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
-                aria-label="New File"
-                onClick={createNewFile}
-              >
-                <File size={14} />
-              </button>
-              <button
-                className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
-                aria-label="New Folder"
-                onClick={createNewFolder}
-              >
-                <FolderPlus size={14} />
-              </button>
-            </div>
-          </div>
-          <nav className="pl-2 pr-3 pt-2 pb-2 overflow-auto overflow-x-hidden">
-            <SidebarTree
-              items={treeItems}
-              collapsedIds={collapsedIds}
-              activeId={selectedId}
-              filterText={sidebarFilter}
-              onSelect={(id) => {
-                const node = findNodeById(treeItems, id);
-                if (!node) return;
-                setSelectedId(id);
-                if (node.type === "file") {
-                  openFile(id);
-                }
-              }}
-              onToggleCollapse={toggleCollapse}
-              onItemsChange={handleTreeChange}
-              onRename={renameItem}
-              onDuplicate={duplicateItem}
-              onDelete={deleteItem}
-            />
-          </nav>
-          <SettingsMenu version={appVersion} onOpenSettings={openSettings}>
-            <button
-              className="w-full px-3 h-9 border-t border-border flex items-center justify-between text-textSubtle outline-none hover:bg-surfaceHighlight focus-visible:bg-surfaceHighlight"
-              aria-label="Settings"
-            >
-              <div className="min-w-0 text-sm grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-                <Settings size={14} />
-                <div className="truncate">Settings</div>
-              </div>
-            </button>
-          </SettingsMenu>
-        </aside>
-
-        <div className="flex flex-col min-w-0 min-h-0 bg-surface">
-          <div className="flex-1 min-h-0 overflow-auto pl-16 prose">
-            {imageSrc ? (
-              <div className="flex items-center justify-center h-full p-8">
-                <img
-                  src={imageSrc}
-                  alt={getBaseName(activePath)}
-                  className="max-w-full max-h-full object-contain"
-                />
-              </div>
-            ) : (
-              <MilkdownProvider key={activePath}>
-                <MilkdownEditor
-                  content={content}
-                  onSave={saveFile}
-                  onPasteImage={handlePasteImage}
-                  baseDir={getFullPath(getParentDir(activePath))}
-                  vaultRoot={dataFolder}
-                  attachmentLocation={settings.attachmentLocation}
-                  attachmentSubfolder={settings.attachmentSubfolder}
-                  attachmentSpecifiedFolder={settings.attachmentSpecifiedFolder}
-                />
-              </MilkdownProvider>
-            )}
-          </div>
+          ) : (
+            <MilkdownProvider key={activePath}>
+              <MilkdownEditor
+                content={content}
+                onSave={saveFile}
+                onPasteImage={handlePasteImage}
+                baseDir={getFullPath(getParentDir(activePath))}
+                vaultRoot={dataFolder}
+                attachmentLocation={settings.attachmentLocation}
+                attachmentSubfolder={settings.attachmentSubfolder}
+                attachmentSpecifiedFolder={settings.attachmentSpecifiedFolder}
+              />
+            </MilkdownProvider>
+          )}
         </div>
       </div>
     </div>

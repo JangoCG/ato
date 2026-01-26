@@ -1,0 +1,62 @@
+import type { CallTemplateFunctionArgs, Context, PluginDefinition } from '@yaakapp/api';
+
+export const plugin: PluginDefinition = {
+  templateFunctions: [
+    {
+      name: 'base64.encode',
+      description: 'Encode a value to base64',
+      args: [
+        {
+          label: 'Encoding',
+          type: 'select',
+          name: 'encoding',
+          defaultValue: 'base64',
+          options: [
+            {
+              label: 'Base64',
+              value: 'base64',
+            },
+            {
+              label: 'Base64 URL-safe',
+              value: 'base64url',
+            },
+          ],
+        },
+        { label: 'Plain Text', type: 'text', name: 'value', multiLine: true },
+      ],
+      async onRender(_ctx: Context, args: CallTemplateFunctionArgs): Promise<string | null> {
+        return Buffer.from(String(args.values.value ?? '')).toString(
+          args.values.encoding === 'base64url' ? 'base64url' : 'base64',
+        );
+      },
+    },
+    {
+      name: 'base64.decode',
+      description: 'Decode a value from base64',
+      args: [{ label: 'Encoded Value', type: 'text', name: 'value', multiLine: true }],
+      async onRender(_ctx: Context, args: CallTemplateFunctionArgs): Promise<string | null> {
+        return Buffer.from(String(args.values.value ?? ''), 'base64').toString('utf-8');
+      },
+    },
+    {
+      name: 'url.encode',
+      description: 'Encode a value for use in a URL (percent-encoding)',
+      args: [{ label: 'Plain Text', type: 'text', name: 'value', multiLine: true }],
+      async onRender(_ctx: Context, args: CallTemplateFunctionArgs): Promise<string | null> {
+        return encodeURIComponent(String(args.values.value ?? ''));
+      },
+    },
+    {
+      name: 'url.decode',
+      description: 'Decode a percent-encoded URL value',
+      args: [{ label: 'Encoded Value', type: 'text', name: 'value', multiLine: true }],
+      async onRender(_ctx: Context, args: CallTemplateFunctionArgs): Promise<string | null> {
+        try {
+          return decodeURIComponent(String(args.values.value ?? ''));
+        } catch {
+          return '';
+        }
+      },
+    },
+  ],
+};

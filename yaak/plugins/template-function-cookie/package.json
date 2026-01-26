@@ -1,0 +1,11 @@
+{
+  "name": "@yaak/template-function-cookie",
+  "displayName": "Cookie Template Functions",
+  "description": "Template functions for working with cookies",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "yaakcli build",
+    "dev": "yaakcli dev"
+  }
+}
