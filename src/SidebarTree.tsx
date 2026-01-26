@@ -136,7 +136,7 @@ function TreeRow({
     >
       {item.type === "folder" ? (
         <button
-          className="w-[18px] h-[18px] border-none bg-transparent text-inherit inline-flex items-center justify-center cursor-default"
+          className="w-[18px] h-[18px] flex-shrink-0 border-none bg-transparent text-inherit inline-flex items-center justify-center cursor-default"
           onClick={(event) => {
             event.stopPropagation();
             onToggleCollapse(item.id);
@@ -147,7 +147,7 @@ function TreeRow({
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
       ) : (
-        <span className="w-[18px] h-[18px] opacity-0" />
+        <span className="w-[18px] h-[18px] flex-shrink-0 inline-flex" />
       )}
       <span className="inline-flex items-center text-text-subtlest">
         {item.type === "folder" ? (
