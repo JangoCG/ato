@@ -433,8 +433,21 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
     try {
       const newPath = parentDir ? `${parentDir}/${newName}` : newName;
-      await rename(getFullPath(activePath), getFullPath(newPath));
-      await updateOrderAfterRename(parentDir, currentName, newName);
+      const oldFullPath = getFullPath(activePath);
+      const newFullPath = getFullPath(newPath);
+
+      // Check if the old file exists on disk
+      const fileExists = await exists(oldFullPath);
+
+      if (fileExists) {
+        // File exists, rename it
+        await rename(oldFullPath, newFullPath);
+        await updateOrderAfterRename(parentDir, currentName, newName);
+      } else {
+        // File doesn't exist yet, create it with the new name
+        await writeTextFile(newFullPath, content);
+      }
+
       setActivePath(newPath);
       setSelectedId(newPath);
       await loadTree();
