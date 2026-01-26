@@ -4,6 +4,8 @@
 
 import { emit, listen } from "@tauri-apps/api/event";
 
+export type AttachmentLocation = "vault" | "same" | "subfolder" | "specified";
+
 export type AppSettings = {
   appearance: "system" | "light" | "dark";
   lightTheme: string;
@@ -11,6 +13,9 @@ export type AppSettings = {
   useNativeTitlebar: boolean;
   interfaceFontSize: number;
   dataFolder: string | null;
+  attachmentLocation: AttachmentLocation;
+  attachmentSubfolder: string;
+  attachmentSpecifiedFolder: string;
 };
 
 const SETTINGS_KEY = "ato-settings";
@@ -23,6 +28,9 @@ const defaultSettings: AppSettings = {
   useNativeTitlebar: false,
   interfaceFontSize: 14,
   dataFolder: null,
+  attachmentLocation: "subfolder",
+  attachmentSubfolder: "attachments",
+  attachmentSpecifiedFolder: "",
 };
 
 export function getSettings(): AppSettings {

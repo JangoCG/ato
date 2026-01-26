@@ -62,16 +62,35 @@ const isImageFile = (path: string) => {
   return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 };
 
+// Convert Obsidian-style wiki-link images to standard markdown
+// ![[image.png]] -> ![](<image.png>)
+// ![[image.png|alt text]] -> ![alt text](<image.png>)
+// Uses angle brackets to handle filenames with spaces
+const convertObsidianImages = (markdown: string): string => {
+  return markdown.replace(
+    /!\[\[([^\]|]+?)(?:\|([^\]]*))?\]\]/g,
+    (_, filename, alt) => `![${alt || ""}](<${filename}>)`
+  );
+};
+
 function MilkdownEditor({
   content,
   onSave,
   onPasteImage,
   baseDir,
+  vaultRoot,
+  attachmentLocation,
+  attachmentSubfolder,
+  attachmentSpecifiedFolder,
 }: {
   content: string;
   onSave: (markdown: string) => void;
   onPasteImage?: (file: File) => Promise<string | null>;
   baseDir: string;
+  vaultRoot: string;
+  attachmentLocation: string;
+  attachmentSubfolder: string;
+  attachmentSpecifiedFolder: string;
 }) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -84,6 +103,18 @@ function MilkdownEditor({
 
   const baseDirRef = useRef(baseDir);
   baseDirRef.current = baseDir;
+
+  const vaultRootRef = useRef(vaultRoot);
+  vaultRootRef.current = vaultRoot;
+
+  const attachmentLocationRef = useRef(attachmentLocation);
+  attachmentLocationRef.current = attachmentLocation;
+
+  const attachmentSubfolderRef = useRef(attachmentSubfolder);
+  attachmentSubfolderRef.current = attachmentSubfolder;
+
+  const attachmentSpecifiedFolderRef = useRef(attachmentSpecifiedFolder);
+  attachmentSpecifiedFolderRef.current = attachmentSpecifiedFolder;
 
   const didFocusRef = useRef(false);
 
@@ -104,8 +135,34 @@ function MilkdownEditor({
               const src = node.attrs.src as string;
 
               // Transform relative paths to asset URLs
+              // Use exact location based on settings (no fallback)
               if (src && !src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("asset://")) {
-                const fullPath = `${baseDirRef.current}/${src}`;
+                let fullPath: string;
+
+                switch (attachmentLocationRef.current) {
+                  case "vault":
+                    // Images are in vault root
+                    fullPath = `${vaultRootRef.current}/${src}`;
+                    break;
+                  case "subfolder": {
+                    // Images are in subfolder under current folder
+                    const subfolder = attachmentSubfolderRef.current || "attachments";
+                    fullPath = `${baseDirRef.current}/${subfolder}/${src}`;
+                    break;
+                  }
+                  case "specified": {
+                    // Images are in specified folder relative to vault root
+                    const specifiedFolder = attachmentSpecifiedFolderRef.current || "assets";
+                    fullPath = `${vaultRootRef.current}/${specifiedFolder}/${src}`;
+                    break;
+                  }
+                  case "same":
+                  default:
+                    // Images are in same folder as markdown file
+                    fullPath = `${baseDirRef.current}/${src}`;
+                    break;
+                }
+
                 img.src = convertFileSrc(fullPath);
               } else {
                 img.src = src;
@@ -467,7 +524,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       } else {
         const text = await readTextFile(fullPath);
         setImageSrc(null);
-        setContent(text);
+        // Convert Obsidian wiki-link images to standard markdown
+        setContent(convertObsidianImages(text));
       }
       setActivePath(path);
       setSelectedId(path);
@@ -505,8 +563,49 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       const ext = file.type.split("/")[1] || "png";
       const filename = `image-${timestamp}.${ext}`;
 
+      // Determine save location based on settings
+      let saveDir: string;
+      let markdownRef: string;
+
+      switch (settings.attachmentLocation) {
+        case "vault":
+          // Save to vault root
+          saveDir = "";
+          markdownRef = filename;
+          break;
+        case "same":
+          // Save to same folder as current file
+          saveDir = parentDir;
+          markdownRef = filename;
+          break;
+        case "subfolder": {
+          // Save to subfolder under current folder
+          const subfolder = settings.attachmentSubfolder || "attachments";
+          saveDir = parentDir ? `${parentDir}/${subfolder}` : subfolder;
+          markdownRef = `${subfolder}/${filename}`;
+          break;
+        }
+        case "specified": {
+          // Save to specified folder relative to vault root
+          const specifiedFolder = settings.attachmentSpecifiedFolder || "assets";
+          saveDir = specifiedFolder;
+          markdownRef = `${specifiedFolder}/${filename}`;
+          break;
+        }
+        default:
+          saveDir = parentDir;
+          markdownRef = filename;
+      }
+
+      // Ensure the save directory exists
+      const saveDirFull = getFullPath(saveDir);
+      const dirExists = await exists(saveDirFull);
+      if (!dirExists) {
+        await mkdir(saveDirFull, { recursive: true });
+      }
+
       // Get the full path for saving
-      const relativePath = parentDir ? `${parentDir}/${filename}` : filename;
+      const relativePath = saveDir ? `${saveDir}/${filename}` : filename;
       const fullPath = getFullPath(relativePath);
 
       // Read file as ArrayBuffer and save
@@ -517,13 +616,13 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       // Refresh the tree to show the new file
       await loadTree();
 
-      // Return just the filename for the markdown reference
-      return filename;
+      // Return the path for the markdown reference
+      return markdownRef;
     } catch (err) {
       console.error("Failed to save pasted image:", err);
       return null;
     }
-  }, [getFullPath, getParentDir, loadTree]);
+  }, [getFullPath, getParentDir, loadTree, settings.attachmentLocation, settings.attachmentSubfolder, settings.attachmentSpecifiedFolder]);
 
   const updateActivePath = useCallback((oldPath: string, newPath: string) => {
     const currentActive = activePathRef.current;
@@ -813,6 +912,10 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
                   onSave={saveFile}
                   onPasteImage={handlePasteImage}
                   baseDir={getFullPath(getParentDir(activePath))}
+                  vaultRoot={dataFolder}
+                  attachmentLocation={settings.attachmentLocation}
+                  attachmentSubfolder={settings.attachmentSubfolder}
+                  attachmentSpecifiedFolder={settings.attachmentSpecifiedFolder}
                 />
               </MilkdownProvider>
             )}
