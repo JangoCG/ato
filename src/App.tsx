@@ -64,6 +64,11 @@ const isImageFile = (path: string) => {
   return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 };
 
+const isRelevantFile = (name: string) => {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".md") || IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+};
+
 // Convert Obsidian-style wiki-link images to standard markdown
 // ![[image.png]] -> ![](<image.png>)
 // ![[image.png|alt text]] -> ![alt text](<image.png>)
@@ -413,13 +418,17 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         if (!entry) continue;
         const id = relativeDir ? `${relativeDir}/${name}` : name;
         if (entry.isDirectory) {
-          nodes.push({
-            id,
-            name,
-            type: "folder",
-            children: await readTree(id),
-          });
-        } else if (entry.isFile) {
+          const children = await readTree(id);
+          // Only include folders that contain relevant files
+          if (children.length > 0) {
+            nodes.push({
+              id,
+              name,
+              type: "folder",
+              children,
+            });
+          }
+        } else if (entry.isFile && isRelevantFile(name)) {
           nodes.push({ id, name, type: "file" });
         }
       }
