@@ -39,7 +39,7 @@ export const Icon = memo(function Icon({
     className,
     !spin && 'transform-gpu',
     spin && 'animate-spin',
-    'flex-shrink-0',
+    'flex-shrink-0 pointer-events-none',
     size === 'xl' && 'h-6 w-6',
     size === 'lg' && 'h-5 w-5',
     size === 'md' && 'h-4 w-4',

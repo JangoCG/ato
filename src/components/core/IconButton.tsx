@@ -39,7 +39,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
 
   const classes = [
     className,
-    'group/button relative flex-shrink-0',
+    'group/button relative flex-shrink-0 cursor-pointer',
     'flex items-center justify-center',
     'border border-transparent',
     'outline-none',

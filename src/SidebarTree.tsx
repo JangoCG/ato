@@ -112,8 +112,8 @@ function TreeRow({
   const rowClassName = [
     "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] select-none",
     "text-textSubtle cursor-default",
-    "hover:bg-surfaceHighlight hover:text-text",
-    "data-[context-menu-open=true]:bg-surfaceHighlight data-[context-menu-open=true]:text-text",
+    "hover:bg-surface-highlight hover:text-text",
+    "data-[context-menu-open=true]:bg-surface-highlight data-[context-menu-open=true]:text-text",
     isSelected ? "bg-surface-active text-text" : "",
     isDragging ? "opacity-50" : "",
     showDropHighlight ? "bg-[#b4d5fe] text-text" : "",

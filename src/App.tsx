@@ -7,7 +7,7 @@ import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Slice } from "@milkdown/prose/model";
-import { File, FolderPlus, Search, Settings } from "lucide-react";
+import { SquarePen, FolderPlus, Search, Settings } from "lucide-react";
 import { writeTextFile, readTextFile, readDir, mkdir, exists, rename, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
@@ -432,6 +432,12 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
           nodes.push({ id, name, type: "file" });
         }
       }
+      // Sort: folders first, then files, alphabetically within each group
+      nodes.sort((a, b) => {
+        if (a.type === "folder" && b.type !== "folder") return -1;
+        if (a.type !== "folder" && b.type === "folder") return 1;
+        return a.name.localeCompare(b.name);
+      });
       return nodes;
     },
     [getFullPath, readOrder],
@@ -908,18 +914,18 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
           </div>
           <div className="flex gap-0.5">
             <button
-              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
+              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle cursor-pointer hover:text-text hover:bg-surfaceHighlight"
               aria-label="New File"
               onClick={createNewFile}
             >
-              <File size={14} />
+              <SquarePen size={14} className="pointer-events-none" />
             </button>
             <button
-              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle hover:text-text hover:bg-surfaceHighlight"
+              className="h-7 w-7 flex items-center justify-center rounded text-textSubtle cursor-pointer hover:text-text hover:bg-surfaceHighlight"
               aria-label="New Folder"
               onClick={createNewFolder}
             >
-              <FolderPlus size={14} />
+              <FolderPlus size={14} className="pointer-events-none" />
             </button>
           </div>
         </div>
@@ -946,12 +952,12 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         </nav>
         <SettingsMenu version={appVersion} onOpenSettings={openSettings}>
           <button
-            className="w-full px-3 h-9 border-t border-border flex items-center justify-between text-textSubtle outline-none hover:bg-surfaceHighlight focus-visible:bg-surfaceHighlight"
+            className="w-full cursor-pointer px-3 h-9 border-t border-border flex items-center justify-between text-textSubtle outline-none hover:bg-surfaceHighlight focus-visible:bg-surfaceHighlight"
             aria-label="Settings"
           >
-            <div className="min-w-0 text-sm grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-              <Settings size={14} />
-              <div className="truncate">Settings</div>
+            <div className="min-w-0 text-sm grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 cursor-pointer">
+              <Settings size={14} className="cursor-pointer" />
+              <div className="truncate cursor-pointer">Settings</div>
             </div>
           </button>
         </SettingsMenu>
