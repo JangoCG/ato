@@ -175,6 +175,7 @@ function MilkdownEditor({
   onCursorPlacedRef.current = onCursorPlaced;
 
   const lastReportedTitleRef = useRef<string | null>(null);
+  const pendingTitleRef = useRef<string | null>(null);
 
   const didFocusRef = useRef(false);
 
@@ -302,8 +303,7 @@ function MilkdownEditor({
               if (firstNode?.type.name === "heading" && selectionParent === firstNode) {
                 const headingText = firstNode.textContent.trim();
                 if (headingText && headingText !== lastReportedTitleRef.current) {
-                  lastReportedTitleRef.current = headingText;
-                  onTitleChangeRef.current?.(headingText);
+                  pendingTitleRef.current = headingText;
                 }
               }
             }
@@ -319,6 +319,15 @@ function MilkdownEditor({
       .config((ctx) => {
         ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
           onSaveRef.current(markdown);
+
+          if (pendingTitleRef.current) {
+            const nextTitle = pendingTitleRef.current;
+            pendingTitleRef.current = null;
+            if (nextTitle && nextTitle !== lastReportedTitleRef.current) {
+              lastReportedTitleRef.current = nextTitle;
+              onTitleChangeRef.current?.(nextTitle);
+            }
+          }
         });
       })
   , []);
