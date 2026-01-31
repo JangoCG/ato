@@ -365,6 +365,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [selectTitleOnMount, setSelectTitleOnMount] = useState(false);
   const lastKnownTitleRef = useRef<string | null>(null);
+  const latestContentRef = useRef(content);
   const [settings, setSettings] = useState(getSettings);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const openSettings = useCallback(async () => {
@@ -450,6 +451,10 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    latestContentRef.current = content;
+  }, [content]);
 
   const readOrder = useCallback(
     async (relativeDir: string) => {
@@ -571,6 +576,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       setActivePath(newName);
       setSelectedId(newName);
       setContent(initialContent);
+      latestContentRef.current = initialContent;
       lastKnownTitleRef.current = title;
       setSelectTitleOnMount(true);
     } catch (err) {
@@ -655,6 +661,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         await rename(getFullPath(oldPath), getFullPath(newPath));
         await updateOrderAfterRename(parentDir, getBaseName(oldPath), fileName);
         lastKnownTitleRef.current = title;
+        setContent(latestContentRef.current);
         setActivePath(newPath);
         await loadTree();
         setSelectedId(newPath);
@@ -733,6 +740,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         const src = convertFileSrc(fullPath);
         setImageSrc(src);
         setContent("");
+        latestContentRef.current = "";
         lastKnownTitleRef.current = null;
       } else {
         let text = await readTextFile(fullPath);
@@ -752,6 +760,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         lastKnownTitleRef.current = existingTitle || titleFromFile;
         setImageSrc(null);
         setContent(text);
+        latestContentRef.current = text;
       }
       setActivePath(path);
       setSelectedId(path);
@@ -761,6 +770,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   };
 
   const saveFile = useCallback((markdown: string) => {
+    latestContentRef.current = markdown;
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
