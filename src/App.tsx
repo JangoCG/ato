@@ -334,7 +334,7 @@ function MilkdownEditor({
           didFocusRef.current = true;
 
           // Select title text if requested
-          if (selectTitleOnMountRef.current) {
+          if (selectTitleOnMountRef.current && !placeCursorAfterTitleOnMountRef.current) {
             const firstNode = view.state.doc.firstChild;
             if (firstNode?.type.name === "heading" && firstNode.textContent) {
               // Select the heading text (position 1 is start of heading content)
@@ -348,17 +348,19 @@ function MilkdownEditor({
             }
           }
 
-          // Place cursor after title if requested
+          // Place cursor after title if requested (defer to override any internal selection)
           if (placeCursorAfterTitleOnMountRef.current) {
-            const firstNode = view.state.doc.firstChild;
-            if (firstNode?.type.name === "heading") {
-              const pos = Math.min(view.state.doc.content.size, firstNode.nodeSize + 1);
-              const tr = view.state.tr.setSelection(
-                TextSelection.create(view.state.doc, pos)
-              );
-              view.dispatch(tr);
-              onCursorPlacedRef.current?.();
-            }
+            requestAnimationFrame(() => {
+              const firstNode = view.state.doc.firstChild;
+              if (firstNode?.type.name === "heading") {
+                const pos = Math.min(view.state.doc.content.size, firstNode.nodeSize + 1);
+                const tr = view.state.tr.setSelection(
+                  TextSelection.create(view.state.doc, pos)
+                );
+                view.dispatch(tr);
+                onCursorPlacedRef.current?.();
+              }
+            });
           }
         } catch {
           // Editor not ready yet
@@ -682,6 +684,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       }
 
       try {
+        setSelectTitleOnMount(false);
         setPlaceCursorAfterTitleOnMount(true);
         await rename(getFullPath(oldPath), getFullPath(newPath));
         await updateOrderAfterRename(parentDir, getBaseName(oldPath), fileName);
