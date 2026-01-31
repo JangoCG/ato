@@ -20,6 +20,14 @@ import { ContextMenu } from "./components/ContextMenu";
 
 const INDENTATION_WIDTH = 16;
 
+// Get display name without .md extension for markdown files
+const getDisplayName = (name: string, type: "file" | "folder"): string => {
+  if (type === "file" && name.toLowerCase().endsWith(".md")) {
+    return name.slice(0, -3);
+  }
+  return name;
+};
+
 type DragResult = {
   activeId: string;
   overId: string;
@@ -159,7 +167,7 @@ function TreeRow({
       {isEditing ? (
         <input
           className="bg-surface border border-border text-text rounded px-1.5 py-0.5 text-[13px] w-full outline-none select-text selection:bg-[#b4d5fe] selection:text-text"
-          defaultValue={item.name}
+          defaultValue={getDisplayName(item.name, item.type)}
           autoFocus
           onClick={(event) => event.stopPropagation()}
           onBlur={(event) => onRename(item.id, event.currentTarget.value)}
@@ -174,7 +182,7 @@ function TreeRow({
           }}
         />
       ) : (
-        <span className="truncate">{item.name}</span>
+        <span className="truncate">{getDisplayName(item.name, item.type)}</span>
       )}
     </div>
   );
