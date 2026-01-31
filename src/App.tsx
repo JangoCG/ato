@@ -118,8 +118,6 @@ function MilkdownEditor({
   onTitleChange,
   selectTitleOnMount,
   onTitleSelected,
-  placeCursorAfterTitleOnMount,
-  onCursorPlaced,
 }: {
   content: string;
   onSave: (markdown: string) => void;
@@ -132,8 +130,6 @@ function MilkdownEditor({
   onTitleChange?: (title: string) => void;
   selectTitleOnMount?: boolean;
   onTitleSelected?: () => void;
-  placeCursorAfterTitleOnMount?: boolean;
-  onCursorPlaced?: () => void;
 }) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -167,12 +163,6 @@ function MilkdownEditor({
 
   const onTitleSelectedRef = useRef(onTitleSelected);
   onTitleSelectedRef.current = onTitleSelected;
-
-  const placeCursorAfterTitleOnMountRef = useRef(placeCursorAfterTitleOnMount);
-  placeCursorAfterTitleOnMountRef.current = placeCursorAfterTitleOnMount;
-
-  const onCursorPlacedRef = useRef(onCursorPlaced);
-  onCursorPlacedRef.current = onCursorPlaced;
 
   const lastReportedTitleRef = useRef<string | null>(null);
   const pendingTitleRef = useRef<string | null>(null);
@@ -343,7 +333,7 @@ function MilkdownEditor({
           didFocusRef.current = true;
 
           // Select title text if requested
-          if (selectTitleOnMountRef.current && !placeCursorAfterTitleOnMountRef.current) {
+          if (selectTitleOnMountRef.current) {
             const firstNode = view.state.doc.firstChild;
             if (firstNode?.type.name === "heading" && firstNode.textContent) {
               // Select the heading text (position 1 is start of heading content)
@@ -355,21 +345,6 @@ function MilkdownEditor({
               view.dispatch(tr);
               onTitleSelectedRef.current?.();
             }
-          }
-
-          // Place cursor after title if requested (defer to override any internal selection)
-          if (placeCursorAfterTitleOnMountRef.current) {
-            requestAnimationFrame(() => {
-              const firstNode = view.state.doc.firstChild;
-              if (firstNode?.type.name === "heading") {
-                const pos = Math.min(view.state.doc.content.size, firstNode.nodeSize + 1);
-                const tr = view.state.tr.setSelection(
-                  TextSelection.create(view.state.doc, pos)
-                );
-                view.dispatch(tr);
-                onCursorPlacedRef.current?.();
-              }
-            });
           }
         } catch {
           // Editor not ready yet
@@ -398,9 +373,9 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [content, setContent] = useState(defaultMarkdown);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [selectTitleOnMount, setSelectTitleOnMount] = useState(false);
-  const [placeCursorAfterTitleOnMount, setPlaceCursorAfterTitleOnMount] = useState(false);
   const lastKnownTitleRef = useRef<string | null>(null);
   const latestContentRef = useRef(content);
+  const [editorKey, setEditorKey] = useState(0);
   const [settings, setSettings] = useState(getSettings);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const openSettings = useCallback(async () => {
@@ -613,6 +588,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       setContent(initialContent);
       latestContentRef.current = initialContent;
       lastKnownTitleRef.current = title;
+      setEditorKey((prev) => prev + 1);
       setSelectTitleOnMount(true);
     } catch (err) {
       console.error("Failed to create file:", err);
@@ -694,7 +670,6 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
       try {
         setSelectTitleOnMount(false);
-        setPlaceCursorAfterTitleOnMount(true);
         await rename(getFullPath(oldPath), getFullPath(newPath));
         await updateOrderAfterRename(parentDir, getBaseName(oldPath), fileName);
         lastKnownTitleRef.current = title;
@@ -704,7 +679,6 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         setSelectedId(newPath);
       } catch (err) {
         console.error("Failed to rename file:", err);
-        setPlaceCursorAfterTitleOnMount(false);
       }
     },
     [activePath, isUntitledFile, treeItems, getFullPath, loadTree, updateOrderAfterRename],
@@ -800,6 +774,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         setContent(text);
         latestContentRef.current = text;
       }
+      setEditorKey((prev) => prev + 1);
       setActivePath(path);
       setSelectedId(path);
     } catch (err) {
@@ -1208,7 +1183,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
               />
             </div>
           ) : (
-            <MilkdownProvider key={activePath}>
+            <MilkdownProvider key={editorKey}>
               <MilkdownEditor
                 content={content}
                 onSave={saveFile}
@@ -1221,8 +1196,6 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
                 onTitleChange={handleTitleChange}
                 selectTitleOnMount={selectTitleOnMount}
                 onTitleSelected={() => setSelectTitleOnMount(false)}
-                placeCursorAfterTitleOnMount={placeCursorAfterTitleOnMount}
-                onCursorPlaced={() => setPlaceCursorAfterTitleOnMount(false)}
               />
             </MilkdownProvider>
           )}
