@@ -7,6 +7,7 @@ import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Slice } from "@milkdown/prose/model";
+import { TextSelection } from "@milkdown/prose/state";
 import { SquarePen, FolderPlus, Search, Settings } from "lucide-react";
 import { writeTextFile, readTextFile, readDir, mkdir, exists, rename, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -69,6 +70,31 @@ const isRelevantFile = (name: string) => {
   return lower.endsWith(".md") || IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
 };
 
+// Extract title from markdown (first H1)
+const extractTitle = (markdown: string): string | null => {
+  const match = markdown.match(/^#\s+(.+?)(?:\n|$)/);
+  return match ? match[1].trim() : null;
+};
+
+// Ensure markdown starts with H1 title
+const ensureTitleHeader = (markdown: string, title: string): string => {
+  const existingTitle = extractTitle(markdown);
+  if (existingTitle) {
+    // Replace existing title
+    return markdown.replace(/^#\s+.+?(?:\n|$)/, `# ${title}\n`);
+  }
+  // Add title at the beginning
+  return `# ${title}\n\n${markdown}`;
+};
+
+// Convert title to valid filename
+const titleToFilename = (title: string): string => {
+  return title
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
 // Convert Obsidian-style wiki-link images to standard markdown
 // ![[image.png]] -> ![](<image.png>)
 // ![[image.png|alt text]] -> ![alt text](<image.png>)
@@ -89,6 +115,9 @@ function MilkdownEditor({
   attachmentLocation,
   attachmentSubfolder,
   attachmentSpecifiedFolder,
+  onTitleChange,
+  selectTitleOnMount,
+  onTitleSelected,
 }: {
   content: string;
   onSave: (markdown: string) => void;
@@ -98,6 +127,9 @@ function MilkdownEditor({
   attachmentLocation: string;
   attachmentSubfolder: string;
   attachmentSpecifiedFolder: string;
+  onTitleChange?: (title: string) => void;
+  selectTitleOnMount?: boolean;
+  onTitleSelected?: () => void;
 }) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -122,6 +154,17 @@ function MilkdownEditor({
 
   const attachmentSpecifiedFolderRef = useRef(attachmentSpecifiedFolder);
   attachmentSpecifiedFolderRef.current = attachmentSpecifiedFolder;
+
+  const onTitleChangeRef = useRef(onTitleChange);
+  onTitleChangeRef.current = onTitleChange;
+
+  const selectTitleOnMountRef = useRef(selectTitleOnMount);
+  selectTitleOnMountRef.current = selectTitleOnMount;
+
+  const onTitleSelectedRef = useRef(onTitleSelected);
+  onTitleSelectedRef.current = onTitleSelected;
+
+  const lastReportedTitleRef = useRef<string | null>(null);
 
   const didFocusRef = useRef(false);
 
@@ -239,6 +282,23 @@ function MilkdownEditor({
               return false;
             }
           },
+          handleKeyDown: (view, event) => {
+            if (prev.handleKeyDown?.(view, event)) return true;
+
+            // Handle Enter key - sync title if in first heading
+            if (event.key === "Enter") {
+              const firstNode = view.state.doc.firstChild;
+              const selectionParent = view.state.selection.$from.parent;
+              if (firstNode?.type.name === "heading" && selectionParent === firstNode) {
+                const headingText = firstNode.textContent.trim();
+                if (headingText && headingText !== lastReportedTitleRef.current) {
+                  lastReportedTitleRef.current = headingText;
+                  onTitleChangeRef.current?.(headingText);
+                }
+              }
+            }
+            return false;
+          },
         }));
       })
       .use(commonmark)
@@ -262,6 +322,21 @@ function MilkdownEditor({
           const view = editor.ctx.get(editorViewCtx);
           view.focus();
           didFocusRef.current = true;
+
+          // Select title text if requested
+          if (selectTitleOnMountRef.current) {
+            const firstNode = view.state.doc.firstChild;
+            if (firstNode?.type.name === "heading" && firstNode.textContent) {
+              // Select the heading text (position 1 is start of heading content)
+              const from = 1;
+              const to = 1 + firstNode.textContent.length;
+              const tr = view.state.tr.setSelection(
+                TextSelection.create(view.state.doc, from, to)
+              );
+              view.dispatch(tr);
+              onTitleSelectedRef.current?.();
+            }
+          }
         } catch {
           // Editor not ready yet
         }
@@ -288,6 +363,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [content, setContent] = useState(defaultMarkdown);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [selectTitleOnMount, setSelectTitleOnMount] = useState(false);
+  const lastKnownTitleRef = useRef<string | null>(null);
   const [settings, setSettings] = useState(getSettings);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const openSettings = useCallback(async () => {
@@ -346,6 +423,11 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     parts.pop();
     return parts.join("/");
   }, []);
+
+  const isUntitledFile = useCallback((path: string) => {
+    const name = getBaseName(path);
+    return /^Untitled(?:\s+\d+)?\.md$/.test(name);
+  }, [getBaseName]);
 
   const ensureAppFolder = useCallback(async () => {
     const dirExists = await exists(dataFolder);
@@ -478,14 +560,19 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       counter++;
     }
 
+    const title = newName.slice(0, -3); // Remove .md
+    const initialContent = `# ${title}\n\n`;
+
     console.log("Creating file:", `${dataFolder}/${newName}`);
     try {
-      await writeTextFile(getFullPath(newName), "");
+      await writeTextFile(getFullPath(newName), initialContent);
       console.log("File created successfully");
       await loadTree();
       setActivePath(newName);
       setSelectedId(newName);
-      setContent("");
+      setContent(initialContent);
+      lastKnownTitleRef.current = title;
+      setSelectTitleOnMount(true);
     } catch (err) {
       console.error("Failed to create file:", err);
     }
@@ -520,9 +607,75 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     [readOrder, writeOrder],
   );
 
+  const handleTitleChange = useCallback(
+    async (title: string) => {
+      if (!isUntitledFile(activePath)) return;
+      // Skip if title hasn't changed
+      if (!title || title === lastKnownTitleRef.current) return;
+
+      // Sanitize title for filename (remove invalid characters)
+      let fileName = titleToFilename(title);
+      if (!fileName) return;
+
+      // Add .md extension
+      if (!fileName.endsWith(".md")) {
+        fileName = `${fileName}.md`;
+      }
+
+      const currentFileName = getBaseName(activePath);
+      // Skip if filename is already correct
+      if (fileName === currentFileName) {
+        lastKnownTitleRef.current = title;
+        return;
+      }
+
+      const parentDir = getParentDir(activePath);
+      const siblings = getChildrenForParent(treeItems, parentDir || null).map((n) => n.name);
+
+      // Check if name already exists (excluding current file)
+      if (siblings.includes(fileName) && fileName !== currentFileName) {
+        // Add counter to make unique
+        const baseName = fileName.slice(0, -3);
+        let counter = 1;
+        while (siblings.includes(`${baseName} ${counter}.md`)) {
+          counter++;
+        }
+        fileName = `${baseName} ${counter}.md`;
+      }
+
+      const oldPath = activePath;
+      const newPath = parentDir ? `${parentDir}/${fileName}` : fileName;
+
+      if (oldPath === newPath) {
+        lastKnownTitleRef.current = title;
+        return;
+      }
+
+      try {
+        await rename(getFullPath(oldPath), getFullPath(newPath));
+        await updateOrderAfterRename(parentDir, getBaseName(oldPath), fileName);
+        lastKnownTitleRef.current = title;
+        setActivePath(newPath);
+        await loadTree();
+        setSelectedId(newPath);
+      } catch (err) {
+        console.error("Failed to rename file:", err);
+      }
+    },
+    [activePath, isUntitledFile, treeItems, getFullPath, loadTree, updateOrderAfterRename],
+  );
+
   const renameFile = async (newName: string) => {
     const currentName = getBaseName(activePath);
-    if (newName === currentName || !newName.trim()) {
+    const currentNameWithoutExt = currentName.endsWith(".md") ? currentName.slice(0, -3) : currentName;
+
+    if (!newName.trim()) {
+      setIsEditingName(false);
+      return;
+    }
+
+    // Compare without extension (since input doesn't show .md)
+    if (newName === currentNameWithoutExt) {
       setIsEditingName(false);
       return;
     }
@@ -535,7 +688,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     const parentDir = getParentDir(activePath);
     const parentId = parentDir ? parentDir : null;
     const siblingNames = getChildrenForParent(treeItems, parentId).map((node) => node.name);
-    if (siblingNames.includes(newName)) {
+    // Exclude current file from duplicate check
+    if (siblingNames.includes(newName) && newName !== currentName) {
       console.error("File already exists:", newName);
       setIsEditingName(false);
       return;
@@ -546,21 +700,26 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
       const oldFullPath = getFullPath(activePath);
       const newFullPath = getFullPath(newPath);
 
+      // Update title in content to match new filename
+      const newTitle = newName.endsWith(".md") ? newName.slice(0, -3) : newName;
+      const updatedContent = ensureTitleHeader(content, newTitle);
+
       // Check if the old file exists on disk
       const fileExists = await exists(oldFullPath);
 
       if (fileExists) {
-        // File exists, rename it
+        // File exists, rename it and update content
+        await writeTextFile(oldFullPath, updatedContent);
         await rename(oldFullPath, newFullPath);
         await updateOrderAfterRename(parentDir, currentName, newName);
       } else {
         // File doesn't exist yet, create it with the new name
-        await writeTextFile(newFullPath, content);
+        await writeTextFile(newFullPath, updatedContent);
       }
 
-      setActivePath(newPath);
-      setSelectedId(newPath);
       await loadTree();
+      // Re-open the file to sync the editor with the new content
+      await openFile(newPath);
     } catch (err) {
       console.error("Failed to rename file:", err);
     }
@@ -574,11 +733,25 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         const src = convertFileSrc(fullPath);
         setImageSrc(src);
         setContent("");
+        lastKnownTitleRef.current = null;
       } else {
-        const text = await readTextFile(fullPath);
-        setImageSrc(null);
+        let text = await readTextFile(fullPath);
         // Convert Obsidian wiki-link images to standard markdown
-        setContent(convertObsidianImages(text));
+        text = convertObsidianImages(text);
+
+        // Extract or create title from filename
+        const fileName = getBaseName(path);
+        const titleFromFile = fileName.endsWith(".md") ? fileName.slice(0, -3) : fileName;
+        const existingTitle = extractTitle(text);
+
+        if (!existingTitle) {
+          // Add title header if missing
+          text = ensureTitleHeader(text, titleFromFile);
+        }
+
+        lastKnownTitleRef.current = existingTitle || titleFromFile;
+        setImageSrc(null);
+        setContent(text);
       }
       setActivePath(path);
       setSelectedId(path);
@@ -997,6 +1170,9 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
                 attachmentLocation={settings.attachmentLocation}
                 attachmentSubfolder={settings.attachmentSubfolder}
                 attachmentSpecifiedFolder={settings.attachmentSpecifiedFolder}
+                onTitleChange={handleTitleChange}
+                selectTitleOnMount={selectTitleOnMount}
+                onTitleSelected={() => setSelectTitleOnMount(false)}
               />
             </MilkdownProvider>
           )}
