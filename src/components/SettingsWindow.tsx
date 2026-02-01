@@ -8,7 +8,8 @@ import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
 import type { ResizeHandleEvent } from "./ResizeHandle";
 import { ResizeHandle } from "./ResizeHandle";
-import { checkQmdStatus, type QmdStatus } from "../hooks/useQmdSearch";
+import { checkQmdStatus, checkModelStatus, type QmdStatus, type ModelsStatus } from "../hooks/useQmdSearch";
+import { ModelDownloadModal } from "./ModelDownloadModal";
 
 export type ThemeDefinition = {
   id: string;
@@ -28,6 +29,9 @@ export function SettingsPage() {
   const startWidth = useRef<number | null>(null);
   const [qmdStatus, setQmdStatus] = useState<QmdStatus | null>(null);
   const [qmdLoading, setQmdLoading] = useState(false);
+  const [modelStatus, setModelStatus] = useState<ModelsStatus | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [showModelModal, setShowModelModal] = useState(false);
 
   // Derive collection name from folder path
   const collectionName = useMemo(() => {
@@ -48,6 +52,28 @@ export function SettingsPage() {
       .catch(() => setQmdStatus(null))
       .finally(() => setQmdLoading(false));
   }, [settings.dataFolder]);
+
+  // Check model status on mount
+  useEffect(() => {
+    setModelLoading(true);
+    checkModelStatus()
+      .then(setModelStatus)
+      .catch(() => setModelStatus(null))
+      .finally(() => setModelLoading(false));
+  }, []);
+
+  const refreshModelStatus = useCallback(() => {
+    setModelLoading(true);
+    checkModelStatus()
+      .then(setModelStatus)
+      .catch(() => setModelStatus(null))
+      .finally(() => setModelLoading(false));
+  }, []);
+
+  const handleModelsReady = useCallback(() => {
+    setShowModelModal(false);
+    refreshModelStatus();
+  }, [refreshModelStatus]);
 
   // Apply theme whenever settings change
   useEffect(() => {
@@ -275,6 +301,78 @@ export function SettingsPage() {
                 </p>
               </div>
             )}
+
+            {/* AI Models for Semantic Search */}
+            <div className="x-theme-input w-full flex-row gap-0.5 mt-2">
+              <label className="text-text-subtle text-sm mb-0.5 block">AI Models (Semantic Search)</label>
+              <div className="flex flex-col gap-2 w-full rounded-md text-text text-sm border border-border p-3">
+                {modelLoading ? (
+                  <div className="flex items-center gap-2 text-text-subtle">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking models...
+                  </div>
+                ) : modelStatus ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {modelStatus.embedding.exists ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-text-subtle" />
+                        )}
+                        <span>Embedding Model</span>
+                        <span className="text-text-subtlest text-xs">(~329MB)</span>
+                      </div>
+                      <span className={`text-xs ${modelStatus.embedding.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
+                        {modelStatus.embedding.exists ? 'Installed' : 'Not installed'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {modelStatus.generation.exists ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-text-subtle" />
+                        )}
+                        <span>Query Expansion Model</span>
+                        <span className="text-text-subtlest text-xs">(~1.3GB)</span>
+                      </div>
+                      <span className={`text-xs ${modelStatus.generation.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
+                        {modelStatus.generation.exists ? 'Installed' : 'Not installed'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {modelStatus.reranking.exists ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-text-subtle" />
+                        )}
+                        <span>Reranking Model</span>
+                        <span className="text-text-subtlest text-xs">(~650MB)</span>
+                      </div>
+                      <span className={`text-xs ${modelStatus.reranking.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
+                        {modelStatus.reranking.exists ? 'Installed' : 'Not installed'}
+                      </span>
+                    </div>
+                    {!modelStatus.semantic_ready && (
+                      <button
+                        type="button"
+                        onClick={() => setShowModelModal(true)}
+                        className="mt-2 px-3 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90 self-start"
+                      >
+                        Download Models
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-text-subtle">Unable to check model status</div>
+                )}
+              </div>
+              <p className="text-text-subtlest text-xs mt-1">
+                AI models are required for Semantic and Hybrid search modes. Models are stored in ~/.cache/qmd/models/
+              </p>
+            </div>
           </div>
         )}
 
@@ -408,6 +506,11 @@ export function SettingsPage() {
           </div>
         )}
       </div>
+      <ModelDownloadModal
+        isOpen={showModelModal}
+        onClose={() => setShowModelModal(false)}
+        onReady={handleModelsReady}
+      />
     </div>
   );
 }
