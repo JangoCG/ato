@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen } from "lucide-react";
-import { saveSettings } from "../lib/settings";
+import { deriveQmdCollectionName, saveSettings } from "../lib/settings";
 
 interface SetupScreenProps {
   onComplete: (folder: string) => void;
@@ -31,7 +31,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
 
   const handleContinue = () => {
     if (selectedFolder) {
-      saveSettings({ dataFolder: selectedFolder });
+      saveSettings({
+        dataFolder: selectedFolder,
+        qmdCollectionName: deriveQmdCollectionName(selectedFolder),
+      });
       onComplete(selectedFolder);
     }
   };

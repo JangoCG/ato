@@ -21,7 +21,7 @@ import { SetupScreen } from "./components/SetupScreen";
 import { FindInFile } from "./components/FindInFile";
 import type { ResizeHandleEvent } from "./components/ResizeHandle";
 import { ResizeHandle } from "./components/ResizeHandle";
-import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
+import { deriveQmdCollectionName, getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 import { SearchModal } from "./components/SearchModal";
 import { ensureQmdCollection } from "./hooks/useQmdSearch";
@@ -537,10 +537,11 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
   // Initialize QMD collection for this vault
   useEffect(() => {
-    ensureQmdCollection(dataFolder).catch((err) => {
+    const collectionName = settings.qmdCollectionName ?? deriveQmdCollectionName(dataFolder);
+    ensureQmdCollection(dataFolder, collectionName).catch((err) => {
       console.warn("Failed to initialize QMD collection:", err);
     });
-  }, [dataFolder]);
+  }, [dataFolder, settings.qmdCollectionName]);
 
   // Keyboard shortcut for search (Cmd+K / Ctrl+K) and find in file (Cmd+F / Ctrl+F)
   useEffect(() => {
@@ -1313,6 +1314,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         onClose={() => setIsSearchOpen(false)}
         onSelectFile={openFile}
         vaultPath={dataFolder}
+        collectionName={settings.qmdCollectionName ?? undefined}
       />
     </div>
   );
@@ -1326,7 +1328,11 @@ function App() {
   }, []);
 
   const handleSetupComplete = useCallback((folder: string) => {
-    setSettings((prev) => ({ ...prev, dataFolder: folder }));
+    setSettings((prev) => ({
+      ...prev,
+      dataFolder: folder,
+      qmdCollectionName: deriveQmdCollectionName(folder),
+    }));
   }, []);
 
   if (!settings.dataFolder) {

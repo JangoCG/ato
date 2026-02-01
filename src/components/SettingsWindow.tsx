@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { FolderOpen, Link, Moon, Palette, Settings as SettingsIcon, Sun, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
+import { deriveQmdCollectionName, getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
 import { getFolderSettings } from "../lib/useObsidianImport";
 import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
@@ -44,7 +44,7 @@ export function SettingsPage() {
     const parts = settings.dataFolder.replace(/\/+$/, "").split("/");
     return parts[parts.length - 1] || null;
   }, [settings.dataFolder]);
-  const displayCollectionName = qmdStatus?.collection_name ?? collectionName;
+  const displayCollectionName = qmdStatus?.collection_name ?? settings.qmdCollectionName ?? collectionName;
 
   // Check QMD status when dataFolder changes
   useEffect(() => {
@@ -61,7 +61,7 @@ export function SettingsPage() {
         const status = await checkQmdStatus(dataFolder);
         if (cancelled) return;
         if (status.available && !status.collection_exists) {
-          const ensured = await ensureQmdCollection(dataFolder);
+          const ensured = await ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined);
           if (!cancelled) setQmdStatus(ensured);
         } else {
           setQmdStatus(status);
@@ -77,7 +77,7 @@ export function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [settings.dataFolder]);
+  }, [settings.dataFolder, settings.qmdCollectionName]);
 
   // Check model status on mount
   useEffect(() => {
@@ -200,6 +200,14 @@ export function SettingsPage() {
     setSettings(updated);
   }, []);
 
+  useEffect(() => {
+    if (!settings.dataFolder) return;
+    const derived = deriveQmdCollectionName(settings.dataFolder);
+    if (settings.qmdCollectionName !== derived) {
+      updateSettings({ qmdCollectionName: derived });
+    }
+  }, [settings.dataFolder, settings.qmdCollectionName, updateSettings]);
+
   const handleChangeFolder = useCallback(async () => {
     const selected = await open({
       directory: true,
@@ -211,7 +219,10 @@ export function SettingsPage() {
 
     // Auto-detect Obsidian vault and import attachment settings
     const updates = await getFolderSettings(selected);
-    updateSettings(updates);
+    updateSettings({
+      ...updates,
+      qmdCollectionName: deriveQmdCollectionName(selected),
+    });
   }, [settings.dataFolder, updateSettings]);
 
   const showLight = settings.appearance === "system" || settings.appearance === "light";

@@ -8,6 +8,7 @@ interface SearchModalProps {
   onClose: () => void;
   onSelectFile: (filePath: string, lineNumber?: number) => void;
   vaultPath?: string;
+  collectionName?: string | null;
 }
 
 const ALL_SEARCH_MODES: { value: SearchMode; label: string; description: string }[] = [
@@ -16,7 +17,7 @@ const ALL_SEARCH_MODES: { value: SearchMode; label: string; description: string 
   { value: "query", label: "Hybrid", description: "LLM-enhanced search" },
 ];
 
-export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: SearchModalProps) {
+export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath, collectionName }: SearchModalProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("search");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -35,10 +36,11 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
 
   // Derive collection name from vault path (folder name)
   const collection = useMemo(() => {
+    if (collectionName) return collectionName;
     if (!vaultPath) return undefined;
     const parts = vaultPath.replace(/\/+$/, "").split("/");
     return parts[parts.length - 1] || undefined;
-  }, [vaultPath]);
+  }, [collectionName, vaultPath]);
 
   const { results, isLoading, error, search, clearResults } = useQmdSearch({
     debounceMs: 200,

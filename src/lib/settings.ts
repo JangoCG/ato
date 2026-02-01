@@ -13,6 +13,7 @@ export type AppSettings = {
   useNativeTitlebar: boolean;
   interfaceFontSize: number;
   dataFolder: string | null;
+  qmdCollectionName: string | null;
   attachmentLocation: AttachmentLocation;
   attachmentSubfolder: string;
   attachmentSpecifiedFolder: string;
@@ -28,10 +29,26 @@ const defaultSettings: AppSettings = {
   useNativeTitlebar: false,
   interfaceFontSize: 14,
   dataFolder: null,
+  qmdCollectionName: null,
   attachmentLocation: "subfolder",
   attachmentSubfolder: "attachments",
   attachmentSpecifiedFolder: "",
 };
+
+export function deriveQmdCollectionName(vaultPath: string): string {
+  const normalized = vaultPath.replace(/\/+$/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  const base = parts[parts.length - 1] || "vault";
+  const sanitized = base.replace(/[^a-zA-Z0-9_-]+/g, "-").toLowerCase() || "vault";
+
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const suffix = Math.abs(hash).toString(36).slice(0, 6);
+  return `${sanitized}-${suffix}`;
+}
 
 export function getSettings(): AppSettings {
   try {
