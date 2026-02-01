@@ -271,8 +271,12 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
                     {formatFilePath(result.file)}
                   </div>
                   {result.snippet && (
-                    <div className="text-sm text-textSubtle mt-1 line-clamp-2">
-                      {result.snippet}
+                    <div className="text-sm text-textSubtle mt-1 line-clamp-2 font-mono">
+                      {result.snippet
+                        .split('\n')
+                        .filter(line => !line.trim().startsWith('@@ -'))
+                        .join('\n')
+                        .trim()}
                     </div>
                   )}
                 </div>
