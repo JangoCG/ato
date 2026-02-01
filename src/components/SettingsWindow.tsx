@@ -8,7 +8,7 @@ import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
 import type { ResizeHandleEvent } from "./ResizeHandle";
 import { ResizeHandle } from "./ResizeHandle";
-import { checkQmdStatus, checkModelStatus, checkVectorStatus, startEmbedding, type QmdStatus, type ModelsStatus, type VectorIndexStatus, type EmbedProgress } from "../hooks/useQmdSearch";
+import { checkQmdStatus, checkModelStatus, checkVectorStatus, ensureQmdCollection, startEmbedding, type QmdStatus, type ModelsStatus, type VectorIndexStatus, type EmbedProgress } from "../hooks/useQmdSearch";
 import { ModelDownloadModal } from "./ModelDownloadModal";
 import { listen } from "@tauri-apps/api/event";
 
@@ -44,18 +44,39 @@ export function SettingsPage() {
     const parts = settings.dataFolder.replace(/\/+$/, "").split("/");
     return parts[parts.length - 1] || null;
   }, [settings.dataFolder]);
+  const displayCollectionName = qmdStatus?.collection_name ?? collectionName;
 
   // Check QMD status when dataFolder changes
   useEffect(() => {
-    if (!settings.dataFolder) {
+    const dataFolder = settings.dataFolder;
+    if (!dataFolder) {
       setQmdStatus(null);
       return;
     }
-    setQmdLoading(true);
-    checkQmdStatus(settings.dataFolder)
-      .then(setQmdStatus)
-      .catch(() => setQmdStatus(null))
-      .finally(() => setQmdLoading(false));
+
+    let cancelled = false;
+    const refreshStatus = async () => {
+      setQmdLoading(true);
+      try {
+        const status = await checkQmdStatus(dataFolder);
+        if (cancelled) return;
+        if (status.available && !status.collection_exists) {
+          const ensured = await ensureQmdCollection(dataFolder);
+          if (!cancelled) setQmdStatus(ensured);
+        } else {
+          setQmdStatus(status);
+        }
+      } catch {
+        if (!cancelled) setQmdStatus(null);
+      } finally {
+        if (!cancelled) setQmdLoading(false);
+      }
+    };
+
+    refreshStatus();
+    return () => {
+      cancelled = true;
+    };
   }, [settings.dataFolder]);
 
   // Check model status on mount
@@ -85,8 +106,12 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (!settings.dataFolder) {
+      setVectorStatus(null);
+      return;
+    }
     refreshVectorStatus();
-  }, [refreshVectorStatus]);
+  }, [refreshVectorStatus, settings.dataFolder]);
 
   // Listen for embed progress events
   useEffect(() => {
@@ -325,7 +350,7 @@ export function SettingsPage() {
                 <div className="flex flex-row gap-2 w-full rounded-md text-text text-sm border border-border items-center px-3 py-2">
                   <Search className="h-4 w-4 text-text-subtle flex-shrink-0" />
                   <div className="flex-1 flex items-center gap-2">
-                    <span className="font-mono">{collectionName}</span>
+                    <span className="font-mono">{displayCollectionName}</span>
                     {qmdLoading ? (
                       <Loader2 className="h-4 w-4 text-text-subtle animate-spin" />
                     ) : qmdStatus?.collection_exists ? (
