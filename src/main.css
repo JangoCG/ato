@@ -94,14 +94,12 @@
     --color-black: 255 0% 0%;
   }
 
-  /* Find in file highlights */
-  .find-highlight {
-    background-color: rgb(253 224 71 / 0.5); /* yellow-300/50 */
-    border-radius: 0.125rem;
+  /* Find in file highlights (CSS Custom Highlight API) */
+  ::highlight(find-results) {
+    background-color: rgb(253 224 71 / 0.5);
   }
 
-  .find-highlight-current {
-    background-color: rgb(251 146 60 / 0.7); /* orange-400/70 */
-    box-shadow: 0 0 0 2px rgb(249 115 22); /* ring-2 ring-orange-500 */
+  ::highlight(find-current) {
+    background-color: rgb(251 146 60 / 0.8);
   }
 }

@@ -1,17 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Search, FileText, Loader2, AlertCircle } from "lucide-react";
-import { useQmdSearch, checkModelStatus, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
-import { ModelDownloadModal } from "./ModelDownloadModal";
+import { useQmdSearch, checkVectorStatus, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
 
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectFile: (filePath: string) => void;
+  onSelectFile: (filePath: string, lineNumber?: number) => void;
   vaultPath?: string;
 }
 
-const SEARCH_MODES: { value: SearchMode; label: string; description: string }[] = [
+const ALL_SEARCH_MODES: { value: SearchMode; label: string; description: string }[] = [
   { value: "search", label: "Fast", description: "BM25 keyword search" },
   { value: "vsearch", label: "Semantic", description: "Vector similarity search" },
   { value: "query", label: "Hybrid", description: "LLM-enhanced search" },
@@ -21,10 +20,18 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("search");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [showModelModal, setShowModelModal] = useState(false);
-  const [modelsReady, setModelsReady] = useState<boolean | null>(null);
+  const [vectorIndexReady, setVectorIndexReady] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Only show semantic modes if vector index exists
+  const availableModes = useMemo(() => {
+    if (vectorIndexReady) {
+      return ALL_SEARCH_MODES;
+    }
+    // Only show Fast search if no vector index
+    return ALL_SEARCH_MODES.filter(m => m.value === "search");
+  }, [vectorIndexReady]);
 
   // Derive collection name from vault path (folder name)
   const collection = useMemo(() => {
@@ -42,13 +49,9 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
   // Search when query or mode changes
   useEffect(() => {
     if (isOpen && query.trim()) {
-      // Don't search if semantic modes and models aren't ready
-      if ((mode === "vsearch" || mode === "query") && modelsReady === false) {
-        return;
-      }
       search(query, mode);
     }
-  }, [query, mode, isOpen, search, modelsReady]);
+  }, [query, mode, isOpen, search]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -66,24 +69,16 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
     setSelectedIndex(0);
   }, [results]);
 
-  // Check model status when switching to semantic modes
+  // Check vector index status when modal opens
   useEffect(() => {
     if (!isOpen) return;
 
-    if (mode === "vsearch" || mode === "query") {
-      checkModelStatus().then((status) => {
-        const ready = mode === "vsearch" ? status.semantic_ready : status.all_ready;
-        setModelsReady(ready);
-        if (!ready) {
-          setShowModelModal(true);
-        }
-      }).catch(() => {
-        setModelsReady(false);
-      });
-    } else {
-      setModelsReady(true);
-    }
-  }, [mode, isOpen]);
+    checkVectorStatus().then((status) => {
+      setVectorIndexReady(status.has_vectors);
+    }).catch(() => {
+      setVectorIndexReady(false);
+    });
+  }, [isOpen]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -95,12 +90,42 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
     }
   }, [selectedIndex, results.length]);
 
+  const handleSelectResult = useCallback(
+    (result: QmdSearchResult) => {
+      // Extract relative path from qmd:// URL
+      // Format: qmd://collection/path/to/file.md
+      let filePath = result.file;
+      if (filePath.startsWith("qmd://")) {
+        // Remove qmd:// prefix and collection name
+        const parts = filePath.slice(6).split("/");
+        parts.shift(); // Remove collection name
+        filePath = parts.join("/");
+      }
+
+      // Parse line number from snippet if available
+      // Format: @@ -4,4 @@ (context info)
+      let lineNumber: number | undefined;
+      if (result.snippet) {
+        const match = result.snippet.match(/@@ -(\d+)/);
+        if (match) {
+          lineNumber = parseInt(match[1], 10);
+        }
+      }
+
+      onSelectFile(filePath, lineNumber);
+      onClose();
+    },
+    [onSelectFile, onClose]
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
+          if (results.length > 0) {
+            setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
+          }
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -118,40 +143,8 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
           break;
       }
     },
-    [results, selectedIndex, onClose]
+    [results, selectedIndex, onClose, handleSelectResult]
   );
-
-  const handleSelectResult = useCallback(
-    (result: QmdSearchResult) => {
-      // Extract relative path from qmd:// URL
-      // Format: qmd://collection/path/to/file.md
-      let filePath = result.file;
-      if (filePath.startsWith("qmd://")) {
-        // Remove qmd:// prefix and collection name
-        const parts = filePath.slice(6).split("/");
-        parts.shift(); // Remove collection name
-        filePath = parts.join("/");
-      }
-      onSelectFile(filePath);
-      onClose();
-    },
-    [onSelectFile, onClose]
-  );
-
-  const handleModelsReady = useCallback(() => {
-    setShowModelModal(false);
-    setModelsReady(true);
-    // Trigger search if there's a pending query
-    if (query.trim()) {
-      search(query, mode);
-    }
-  }, [query, mode, search]);
-
-  const handleModelModalClose = useCallback(() => {
-    setShowModelModal(false);
-    // Reset to fast search if user cancels model download
-    setMode("search");
-  }, []);
 
   const scoreToPercent = (score: number) => Math.round(score * 100);
 
@@ -201,24 +194,26 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
             {isLoading && (
               <Loader2 className="w-4 h-4 text-textSubtle animate-spin flex-shrink-0" />
             )}
-            {/* Mode selector */}
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as SearchMode)}
-              className="bg-surfaceHighlight border border-border rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
-              aria-label="Search mode"
-            >
-              {SEARCH_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+            {/* Mode selector - only show if multiple modes available */}
+            {availableModes.length > 1 && (
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as SearchMode)}
+                className="bg-surfaceHighlight border border-border rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
+                aria-label="Search mode"
+              >
+                {availableModes.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Mode description */}
           <div className="px-4 py-2 text-xs text-textSubtlest border-b border-border bg-surfaceHighlight/50">
-            {SEARCH_MODES.find((m) => m.value === mode)?.description}
+            {availableModes.find((m) => m.value === mode)?.description}
           </div>
 
           {/* Results */}
@@ -252,7 +247,7 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
                 key={result.docid}
                 className={`w-full text-left px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors ${
                   index === selectedIndex
-                    ? "bg-primary/10"
+                    ? "bg-blue-500/20 dark:bg-blue-400/20"
                     : "hover:bg-surfaceHighlight"
                 }`}
                 onClick={() => handleSelectResult(result)}
@@ -307,16 +302,7 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
         </div>
       </div>
     );
-  }, [isOpen, query, mode, results, selectedIndex, isLoading, error, handleKeyDown, handleSelectResult, onClose]);
+  }, [isOpen, query, mode, results, selectedIndex, isLoading, error, handleKeyDown, handleSelectResult, onClose, availableModes]);
 
-  return (
-    <>
-      {createPortal(modalContent, document.body)}
-      <ModelDownloadModal
-        isOpen={showModelModal}
-        onClose={handleModelModalClose}
-        onReady={handleModelsReady}
-      />
-    </>
-  );
+  return createPortal(modalContent, document.body);
 }

@@ -43,7 +43,7 @@ export function ModelDownloadModal({ isOpen, onClose, onReady, autoStart = false
 
   // Auto-start download if requested
   useEffect(() => {
-    if (isOpen && autoStart && status && !status.semantic_ready && !isDownloading && !hasAutoStarted) {
+    if (isOpen && autoStart && status && !status.all_ready && !isDownloading && !hasAutoStarted) {
       setHasAutoStarted(true);
       setIsDownloading(true);
       setError(null);
@@ -70,7 +70,7 @@ export function ModelDownloadModal({ isOpen, onClose, onReady, autoStart = false
           // Refresh status and notify ready
           checkModelStatus().then((newStatus) => {
             setStatus(newStatus);
-            if (newStatus.semantic_ready) {
+            if (newStatus.all_ready) {
               onReady();
             }
           });
@@ -201,7 +201,7 @@ export function ModelDownloadModal({ isOpen, onClose, onReady, autoStart = false
                 Cancel
               </button>
             )}
-            {!status?.semantic_ready && (
+            {!status?.all_ready && (
               <button
                 onClick={handleDownload}
                 disabled={isDownloading}
@@ -220,7 +220,7 @@ export function ModelDownloadModal({ isOpen, onClose, onReady, autoStart = false
                 )}
               </button>
             )}
-            {status?.semantic_ready && (
+            {status?.all_ready && (
               <button
                 onClick={onReady}
                 className="px-4 py-2 text-sm bg-primary text-white rounded-md hover:bg-primary/90 flex items-center gap-2"

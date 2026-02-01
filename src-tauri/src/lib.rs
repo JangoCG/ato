@@ -52,6 +52,8 @@ pub fn run() {
             qmd::qmd_status,
             qmd::qmd_ensure_collection,
             qmd::qmd_model_status,
+            qmd::qmd_vector_status,
+            qmd::qmd_embed,
             qmd::qmd_download_models,
         ]);
 

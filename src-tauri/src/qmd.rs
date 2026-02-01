@@ -88,11 +88,12 @@ async fn run_qmd_command(
             let success = output.status.success();
             (stdout, stderr, success)
         } else {
-            // Fall back to system bun for development
-            use std::process::Command;
-            let result = Command::new("bun")
+            // Fall back to system bun for development - use async tokio::process::Command
+            use tokio::process::Command as AsyncCommand;
+            let result = AsyncCommand::new("bun")
                 .args(&full_args)
                 .output()
+                .await
                 .map_err(|e| format!("Failed to execute system bun: {}", e))?;
 
             let stdout = String::from_utf8_lossy(&result.stdout).to_string();
@@ -334,6 +335,189 @@ pub async fn qmd_model_status() -> Result<ModelsStatus, String> {
         all_ready,
         semantic_ready,
     })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VectorIndexStatus {
+    pub has_vectors: bool,
+    pub vector_count: u64,
+    pub pending_count: u64,
+}
+
+/// Check if vector index exists and has embeddings
+#[tauri::command]
+pub async fn qmd_vector_status(app: AppHandle) -> Result<VectorIndexStatus, String> {
+    // Run qmd status and parse output to check vector status
+    let (stdout, _stderr, success) = run_qmd_command(&app, vec!["status"]).await?;
+
+    if !success {
+        return Ok(VectorIndexStatus {
+            has_vectors: false,
+            vector_count: 0,
+            pending_count: 0,
+        });
+    }
+
+    // Parse output like:
+    //   Vectors:  123 embedded
+    //   Pending:  45 need embedding
+    let mut vector_count: u64 = 0;
+    let mut pending_count: u64 = 0;
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.starts_with("Vectors:") {
+            // Extract number from "Vectors:  123 embedded"
+            if let Some(num_str) = line.split_whitespace().nth(1) {
+                vector_count = num_str.parse().unwrap_or(0);
+            }
+        } else if line.starts_with("Pending:") {
+            // Extract number from "Pending:  45 need embedding"
+            if let Some(num_str) = line.split_whitespace().nth(1) {
+                pending_count = num_str.parse().unwrap_or(0);
+            }
+        }
+    }
+
+    Ok(VectorIndexStatus {
+        has_vectors: vector_count > 0,
+        vector_count,
+        pending_count,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EmbedProgress {
+    pub phase: String, // "chunking", "embedding", "done"
+    pub current: u64,
+    pub total: u64,
+    pub percent: f64,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+/// Run qmd embed to create vector embeddings with progress events
+#[tauri::command]
+pub async fn qmd_embed(app: AppHandle) -> Result<(), String> {
+    let qmd_script = get_qmd_script_path(&app)?;
+    let qmd_script_str = qmd_script.to_string_lossy().to_string();
+
+    let shell = app.shell();
+    let args = vec![qmd_script_str.as_str(), "embed"];
+
+    let (mut rx, _child) = if let Ok(sidecar) = shell.sidecar("bun") {
+        sidecar
+            .args(&args)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn bun sidecar: {}", e))?
+    } else {
+        shell
+            .command("bun")
+            .args(&args)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn system bun: {}", e))?
+    };
+
+    use tauri_plugin_shell::process::CommandEvent;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
+                let text = String::from_utf8_lossy(&line);
+                if let Some(progress) = parse_embed_progress(&text) {
+                    let _ = app.emit("qmd-embed-progress", progress);
+                }
+            }
+            CommandEvent::Terminated(status) => {
+                let success = status.code.map(|c| c == 0).unwrap_or(false);
+                let done_event = EmbedProgress {
+                    phase: "done".to_string(),
+                    current: 0,
+                    total: 0,
+                    percent: 100.0,
+                    done: true,
+                    error: if success {
+                        None
+                    } else {
+                        Some("Embedding failed".to_string())
+                    },
+                };
+                let _ = app.emit("qmd-embed-progress", done_event);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_embed_progress(line: &str) -> Option<EmbedProgress> {
+    // Parse lines like:
+    // "Chunking 123 documents by token count..."
+    // "Embedding 45 documents (123 chunks, 1.2 MB)"
+    // Progress bar with percentage
+    let line = line.trim();
+
+    if line.contains("Chunking") && line.contains("documents") {
+        // Extract number from "Chunking 123 documents..."
+        if let Some(num_str) = line.split_whitespace().nth(1) {
+            let total: u64 = num_str.parse().unwrap_or(0);
+            return Some(EmbedProgress {
+                phase: "chunking".to_string(),
+                current: 0,
+                total,
+                percent: 0.0,
+                done: false,
+                error: None,
+            });
+        }
+    }
+
+    if line.contains("Embedding") && line.contains("documents") {
+        // Extract number from "Embedding 45 documents (123 chunks, 1.2 MB)"
+        if let Some(num_str) = line.split_whitespace().nth(1) {
+            let total: u64 = num_str.parse().unwrap_or(0);
+            return Some(EmbedProgress {
+                phase: "embedding".to_string(),
+                current: 0,
+                total,
+                percent: 0.0,
+                done: false,
+                error: None,
+            });
+        }
+    }
+
+    // Parse progress bar output: "█████░░░░░░░░░░░░░░░░░░░░░░░░░  16.67%"
+    if line.contains('%') && (line.contains('█') || line.contains('░')) {
+        if let Some(pct_str) = line.split_whitespace().last() {
+            if let Some(pct) = pct_str.trim_end_matches('%').parse::<f64>().ok() {
+                return Some(EmbedProgress {
+                    phase: "embedding".to_string(),
+                    current: 0,
+                    total: 0,
+                    percent: pct,
+                    done: false,
+                    error: None,
+                });
+            }
+        }
+    }
+
+    // "✓ All content hashes already have embeddings."
+    if line.contains("✓") && line.contains("embeddings") {
+        return Some(EmbedProgress {
+            phase: "done".to_string(),
+            current: 0,
+            total: 0,
+            percent: 100.0,
+            done: true,
+            error: None,
+        });
+    }
+
+    None
 }
 
 #[derive(Debug, Clone, Serialize)]

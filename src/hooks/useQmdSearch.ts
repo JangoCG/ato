@@ -168,3 +168,28 @@ export async function checkModelStatus(): Promise<ModelsStatus> {
 export async function downloadModels(): Promise<void> {
   return invoke<void>("qmd_download_models");
 }
+
+// Vector index status
+export interface VectorIndexStatus {
+  has_vectors: boolean;
+  vector_count: number;
+  pending_count: number;
+}
+
+export async function checkVectorStatus(): Promise<VectorIndexStatus> {
+  return invoke<VectorIndexStatus>("qmd_vector_status");
+}
+
+// Embed progress
+export interface EmbedProgress {
+  phase: string; // "chunking", "embedding", "done"
+  current: number;
+  total: number;
+  percent: number;
+  done: boolean;
+  error: string | null;
+}
+
+export async function startEmbedding(): Promise<void> {
+  return invoke<void>("qmd_embed");
+}

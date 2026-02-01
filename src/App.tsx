@@ -18,6 +18,7 @@ import { HeaderSize } from "./components/HeaderSize";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { SetupScreen } from "./components/SetupScreen";
+import { FindInFile } from "./components/FindInFile";
 import type { ResizeHandleEvent } from "./components/ResizeHandle";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
@@ -120,6 +121,8 @@ function MilkdownEditor({
   onTitleChange,
   selectTitleOnMount,
   onTitleSelected,
+  scrollToLine,
+  onScrollComplete,
 }: {
   content: string;
   onSave: (markdown: string) => void;
@@ -132,6 +135,8 @@ function MilkdownEditor({
   onTitleChange?: (title: string) => void;
   selectTitleOnMount?: boolean;
   onTitleSelected?: () => void;
+  scrollToLine?: number;
+  onScrollComplete?: () => void;
 }) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -166,10 +171,17 @@ function MilkdownEditor({
   const onTitleSelectedRef = useRef(onTitleSelected);
   onTitleSelectedRef.current = onTitleSelected;
 
+  const scrollToLineRef = useRef(scrollToLine);
+  scrollToLineRef.current = scrollToLine;
+
+  const onScrollCompleteRef = useRef(onScrollComplete);
+  onScrollCompleteRef.current = onScrollComplete;
+
   const lastReportedTitleRef = useRef<string | null>(null);
   const pendingTitleRef = useRef<string | null>(null);
 
   const didFocusRef = useRef(false);
+  const didScrollToLineRef = useRef(false);
 
   const { get } = useEditor((root) =>
     Editor.make()
@@ -355,6 +367,62 @@ function MilkdownEditor({
     }
   }, [get]);
 
+  // Scroll to specific line when requested (e.g., from search results)
+  useEffect(() => {
+    const targetLine = scrollToLineRef.current;
+    if (!targetLine || didScrollToLineRef.current) return;
+
+    const editor = get();
+    if (!editor) return;
+
+    // Small delay to ensure editor is fully rendered
+    const timeoutId = setTimeout(() => {
+      try {
+        const view = editor.ctx.get(editorViewCtx);
+        const doc = view.state.doc;
+
+        // Find position at target line by counting block nodes
+        let currentLine = 1;
+        let targetPos = 0;
+
+        doc.descendants((node, pos) => {
+          if (targetPos > 0) return false; // Already found
+          if (node.isBlock && node.isTextblock) {
+            if (currentLine >= targetLine) {
+              targetPos = pos;
+              return false;
+            }
+            currentLine++;
+          }
+          return true;
+        });
+
+        if (targetPos > 0) {
+          // Scroll to the position
+          const coords = view.coordsAtPos(targetPos);
+          const editorRect = view.dom.getBoundingClientRect();
+          const scrollParent = view.dom.closest(".overflow-y-auto") || view.dom.parentElement;
+
+          if (scrollParent && coords) {
+            const targetScroll = coords.top - editorRect.top + scrollParent.scrollTop - 100;
+            scrollParent.scrollTo({ top: Math.max(0, targetScroll), behavior: "smooth" });
+          }
+
+          // Set cursor at the target position
+          const tr = view.state.tr.setSelection(TextSelection.create(doc, targetPos));
+          view.dispatch(tr);
+        }
+
+        didScrollToLineRef.current = true;
+        onScrollCompleteRef.current?.();
+      } catch {
+        // Editor not ready
+      }
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [get, scrollToLine]);
+
   return <Milkdown />;
 }
 
@@ -372,12 +440,15 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isFindInFileOpen, setIsFindInFileOpen] = useState(false);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState(defaultMarkdown);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [selectTitleOnMount, setSelectTitleOnMount] = useState(false);
   const lastKnownTitleRef = useRef<string | null>(null);
   const latestContentRef = useRef(content);
   const [editorKey, setEditorKey] = useState(0);
+  const [scrollToLine, setScrollToLine] = useState<number | undefined>(undefined);
   const [settings, setSettings] = useState(getSettings);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const openSettings = useCallback(async () => {
@@ -471,12 +542,16 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     });
   }, [dataFolder]);
 
-  // Keyboard shortcut for search (Cmd+K / Ctrl+K)
+  // Keyboard shortcut for search (Cmd+K / Ctrl+K) and find in file (Cmd+F / Ctrl+F)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setIsSearchOpen((prev) => !prev);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setIsFindInFileOpen((prev) => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -766,7 +841,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     setIsEditingName(false);
   };
 
-  const openFile = async (path: string) => {
+  const openFile = async (path: string, lineNumber?: number) => {
     try {
       const fullPath = getFullPath(path);
       if (isImageFile(path)) {
@@ -775,6 +850,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         setContent("");
         latestContentRef.current = "";
         lastKnownTitleRef.current = null;
+        setScrollToLine(undefined);
       } else {
         let text = await readTextFile(fullPath);
         // Convert Obsidian wiki-link images to standard markdown
@@ -794,6 +870,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         setImageSrc(null);
         setContent(text);
         latestContentRef.current = text;
+        setScrollToLine(lineNumber);
       }
       setEditorKey((prev) => prev + 1);
       setActivePath(path);
@@ -1194,7 +1271,12 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
       {/* Main Content */}
       <div style={{ gridArea: 'body' }} className="flex flex-col min-w-0 min-h-0 bg-surface">
-        <div className="flex-1 min-h-0 overflow-auto pl-16 prose">
+        <div ref={editorContainerRef} className="relative flex-1 min-h-0 overflow-auto pl-16 prose">
+          <FindInFile
+            isOpen={isFindInFileOpen}
+            onClose={() => setIsFindInFileOpen(false)}
+            containerRef={editorContainerRef}
+          />
           {imageSrc ? (
             <div className="flex items-center justify-center h-full p-8">
               <img
@@ -1217,6 +1299,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
                 onTitleChange={handleTitleChange}
                 selectTitleOnMount={selectTitleOnMount}
                 onTitleSelected={() => setSelectTitleOnMount(false)}
+                scrollToLine={scrollToLine}
+                onScrollComplete={() => setScrollToLine(undefined)}
               />
             </MilkdownProvider>
           )}
