@@ -21,7 +21,7 @@ import { SetupScreen } from "./components/SetupScreen";
 import { FindInFile } from "./components/FindInFile";
 import type { ResizeHandleEvent } from "./components/ResizeHandle";
 import { ResizeHandle } from "./components/ResizeHandle";
-import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
+import { getSettings, saveSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 import { SearchModal } from "./components/SearchModal";
 import { ensureQmdCollection } from "./hooks/useQmdSearch";
@@ -334,7 +334,7 @@ function MilkdownEditor({
           }
         });
       })
-  , []);
+    , []);
 
   useEffect(() => {
     if (didFocusRef.current) return;
@@ -535,12 +535,17 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
     getVersion().then(setAppVersion).catch(console.error);
   }, []);
 
-  // Initialize QMD collection for this vault
+  // Initialize QMD collection for this vault (backend handles naming/persistence)
   useEffect(() => {
-    // Don't pass derived name - let backend use folder name or find existing collection
-    ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined).catch((err) => {
-      console.warn("Failed to initialize QMD collection:", err);
-    });
+    ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined)
+      .then((status) => {
+        if (status.collection_name && status.collection_name !== settings.qmdCollectionName) {
+          saveSettings({ qmdCollectionName: status.collection_name });
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to initialize QMD collection:", err);
+      });
   }, [dataFolder, settings.qmdCollectionName]);
 
   // Keyboard shortcut for search (Cmd+K / Ctrl+K) and find in file (Cmd+F / Ctrl+F)
@@ -598,12 +603,12 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
       const sortedNames = order
         ? [
-            ...order.filter((name) => entryMap.has(name)),
-            ...visibleEntries
-              .map((entry) => entry.name)
-              .filter((name) => !order.includes(name))
-              .sort(),
-          ]
+          ...order.filter((name) => entryMap.has(name)),
+          ...visibleEntries
+            .map((entry) => entry.name)
+            .filter((name) => !order.includes(name))
+            .sort(),
+        ]
         : visibleEntries.map((entry) => entry.name).sort();
 
       const nodes: FileNode[] = [];
@@ -1313,7 +1318,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectFile={openFile}
-        vaultPath={dataFolder}
+
         collectionName={settings.qmdCollectionName ?? undefined}
       />
     </div>
@@ -1331,7 +1336,7 @@ function App() {
     setSettings((prev) => ({
       ...prev,
       dataFolder: folder,
-      qmdCollectionName: null, // Let backend find/create correct collection
+      // qmdCollectionName will be resolved by EditorApp's useEffect
     }));
   }, []);
 

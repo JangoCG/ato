@@ -107,6 +107,16 @@ export function useQmdSearch(options: UseQmdSearchOptions = {}): UseQmdSearchRet
     setIsLoading(false);
   }, []);
 
+  // Reset cache and pending debounce when collection changes
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    cacheRef.current.clear();
+    clearResults();
+  }, [collection, clearResults]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {

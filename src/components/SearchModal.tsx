@@ -3,11 +3,12 @@ import { createPortal } from "react-dom";
 import { Search, FileText, Loader2, AlertCircle } from "lucide-react";
 import { useQmdSearch, checkVectorStatus, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
 
+
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectFile: (filePath: string, lineNumber?: number) => void;
-  vaultPath?: string;
+
   collectionName?: string | null;
 }
 
@@ -17,7 +18,7 @@ const ALL_SEARCH_MODES: { value: SearchMode; label: string; description: string 
   { value: "query", label: "Hybrid", description: "LLM-enhanced search" },
 ];
 
-export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath, collectionName }: SearchModalProps) {
+export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: SearchModalProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("search");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -34,13 +35,10 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath, collecti
     return ALL_SEARCH_MODES.filter(m => m.value === "search");
   }, [vectorIndexReady]);
 
-  // Derive collection name from vault path (folder name)
+  // Use provided collection name
   const collection = useMemo(() => {
-    if (collectionName) return collectionName;
-    if (!vaultPath) return undefined;
-    const parts = vaultPath.replace(/\/+$/, "").split("/");
-    return parts[parts.length - 1] || undefined;
-  }, [collectionName, vaultPath]);
+    return collectionName ?? undefined;
+  }, [collectionName]);
 
   const { results, isLoading, error, search, clearResults } = useQmdSearch({
     debounceMs: 200,
@@ -250,11 +248,10 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath, collecti
             {results.map((result, index) => (
               <button
                 key={result.docid}
-                className={`w-full text-left px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors ${
-                  index === selectedIndex
-                    ? "bg-surface-active text-text"
-                    : "hover:bg-surface-highlight"
-                }`}
+                className={`w-full text-left px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors ${index === selectedIndex
+                  ? "bg-surface-active text-text"
+                  : "hover:bg-surface-highlight"
+                  }`}
                 onClick={() => handleSelectResult(result)}
                 onMouseEnter={() => setSelectedIndex(index)}
                 role="option"

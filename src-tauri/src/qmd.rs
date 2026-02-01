@@ -66,7 +66,8 @@ async fn run_qmd_command(
     full_args.extend(args.iter().map(|s| s.to_string()));
 
     let is_sqlite_busy = |stdout: &str, stderr: &str| -> bool {
-        let has_busy = |text: &str| text.contains("SQLITE_BUSY") || text.contains("database is locked");
+        let has_busy =
+            |text: &str| text.contains("SQLITE_BUSY") || text.contains("database is locked");
         has_busy(stdout) || has_busy(stderr)
     };
 
@@ -198,7 +199,10 @@ pub async fn qmd_status(app: AppHandle, vault_path: String) -> Result<QmdStatus,
         // "name (qmd://name/)\n  Pattern: ...\n  Path: /actual/path"
         for line in stdout.lines() {
             let trimmed = line.trim();
-            if !trimmed.starts_with("Path:") && trimmed.contains("(qmd://") && !trimmed.starts_with("Pattern:") {
+            if !trimmed.starts_with("Path:")
+                && trimmed.contains("(qmd://")
+                && !trimmed.starts_with("Pattern:")
+            {
                 if let Some(name) = trimmed.split_whitespace().next() {
                     current_collection = Some(name.to_string());
                 }
@@ -238,7 +242,13 @@ pub async fn qmd_status(app: AppHandle, vault_path: String) -> Result<QmdStatus,
     })
 }
 
-/// Ensure a QMD collection exists for the vault
+#[derive(Debug, Serialize, Deserialize)]
+struct AtoConfig {
+    #[serde(rename = "qmdCollectionName")]
+    qmd_collection_name: String,
+}
+
+/// Ensure a QMD collection exists for the vault, persisting the name in .ato/config.json
 #[tauri::command]
 pub async fn qmd_ensure_collection(
     app: AppHandle,
@@ -255,15 +265,50 @@ pub async fn qmd_ensure_collection(
         return Err("Bundled QMD is not available".to_string());
     }
 
-    // Derive collection name from folder
-    let name = collection_name.unwrap_or_else(|| {
-        std::path::Path::new(&vault_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("vault")
-            .to_string()
-    });
+    let vault_path_buf = PathBuf::from(&vault_path);
+    let ato_dir = vault_path_buf.join(".ato");
+    let config_file = ato_dir.join("config.json");
 
+    // 1. Determine collection name
+    let name = if config_file.exists() {
+        // Read existing config
+        match std::fs::read_to_string(&config_file) {
+            Ok(content) => match serde_json::from_str::<AtoConfig>(&content) {
+                Ok(config) => config.qmd_collection_name,
+                Err(e) => {
+                    println!("Failed to parse .ato/config.json: {}", e);
+                    // Fallback to generating new name if corrupt
+                    generate_collection_name(&vault_path)
+                }
+            },
+            Err(e) => {
+                println!("Failed to read .ato/config.json: {}", e);
+                generate_collection_name(&vault_path)
+            }
+        }
+    } else {
+        // Generate new name
+        // Use provided name if explicit (e.g. migration), otherwise generate
+        collection_name.unwrap_or_else(|| generate_collection_name(&vault_path))
+    };
+
+    // 2. Persist name to .ato/config.json if distinct or missing
+    if !ato_dir.exists() {
+        std::fs::create_dir_all(&ato_dir)
+            .map_err(|e| format!("Failed to create .ato directory: {}", e))?;
+    }
+
+    // Always write/update config to ensure it matches what we use
+    let config = AtoConfig {
+        qmd_collection_name: name.clone(),
+    };
+    let config_json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    std::fs::write(&config_file, config_json)
+        .map_err(|e| format!("Failed to write .ato/config.json: {}", e))?;
+
+    // 3. Register collection with QMD
     // Try to create collection
     let (stdout, stderr, success) = run_qmd_command(
         &app,
@@ -272,17 +317,148 @@ pub async fn qmd_ensure_collection(
     .await?;
 
     // Check if collection already exists (not an error)
-    if !success && !stderr.contains("already exists") && !stdout.contains("already exists") {
-        return Err(format!("Failed to create collection: {}", stderr));
+    if !success {
+        let already_exists = stderr.contains("already exists") || stdout.contains("already exists");
+        if !already_exists {
+            return Err(format!("Failed to create collection: {}", stderr));
+        }
+
+        // Check if the existing collection actually points to OUR path
+        // If not, our local config is polluted with another folder's collection name
+        let existing_path = get_collection_path(&app, &name).await?;
+
+        let path_mismatch = if let Some(path) = existing_path {
+            let normalized_vault = vault_path.trim_end_matches('/');
+            let normalized_existing = path.trim_end_matches('/');
+            normalized_vault != normalized_existing
+        } else {
+            // Collection exists according to add error, but we couldn't find it in list?
+            // Safest to assume mismatch/issue and regenerate
+            true
+        };
+
+        if path_mismatch {
+            println!(
+                "Collection name collision detected: '{}' belongs to another path. Regenerating...",
+                name
+            );
+
+            // 1. Generate new unique name
+            let new_name = generate_collection_name(&vault_path);
+
+            // 2. Update config file
+            let config = AtoConfig {
+                qmd_collection_name: new_name.clone(),
+            };
+            let config_json = serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+            std::fs::write(&config_file, config_json)
+                .map_err(|e| format!("Failed to write .ato/config.json: {}", e))?;
+
+            // 3. Try adding again with new name
+            let (stdout2, stderr2, success2) = run_qmd_command(
+                &app,
+                vec!["collection", "add", &vault_path, "--name", &new_name],
+            )
+            .await?;
+
+            if !success2 {
+                return Err(format!(
+                    "Failed to create collection with new name: {}",
+                    stderr2
+                ));
+            }
+
+            return Ok(QmdStatus {
+                available: true,
+                version: None,
+                collection_exists: true,
+                collection_name: Some(new_name),
+            });
+        }
+
+        // If paths match, it's just a reinstall/reopen of same folder.
+        // Ensure it's up to date/indexed (fixes empty index issues)
+        let (u_stdout, u_stderr, u_success) = run_qmd_command(&app, vec!["update", &name]).await?;
+
+        if !u_success {
+            println!(
+                "Warning: Failed to update existing collection: {}",
+                u_stderr
+            );
+        }
     }
 
-    // Return status
+    // Return status with the resolved name
     Ok(QmdStatus {
         available: true,
         version: None,
         collection_exists: true,
         collection_name: Some(name),
     })
+}
+
+/// Helper to find the filesystem path for a given collection name
+async fn get_collection_path(
+    app: &AppHandle,
+    collection_name: &str,
+) -> Result<Option<String>, String> {
+    let (stdout, _, success) = run_qmd_command(app, vec!["collection", "list"]).await?;
+
+    if !success {
+        return Err("Failed to list collections".to_string());
+    }
+
+    let mut current_collection: Option<String> = None;
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+
+        // Parse "name (qmd://...)"
+        if !trimmed.starts_with("Path:")
+            && trimmed.contains("(qmd://")
+            && !trimmed.starts_with("Pattern:")
+        {
+            if let Some(name) = trimmed.split_whitespace().next() {
+                current_collection = Some(name.to_string());
+            }
+            continue;
+        }
+
+        // Parse "Path: /..."
+        if let Some(path) = trimmed.strip_prefix("Path:") {
+            if let Some(curr) = &current_collection {
+                if curr == collection_name {
+                    return Ok(Some(path.trim().to_string()));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn generate_collection_name(vault_path: &str) -> String {
+    let folder_name = std::path::Path::new(vault_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("vault");
+
+    // Create a simple stable hash of the path to avoid collisions
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    vault_path.hash(&mut hasher);
+    let hash = hasher.finish();
+    // Use base36 for shorter string
+    let suffix = format!("{:x}", hash).chars().take(6).collect::<String>();
+
+    let sanitized =
+        folder_name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "-");
+
+    format!("{}-{}", sanitized, suffix)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -306,7 +482,10 @@ pub struct ModelsStatus {
 /// Get the QMD model cache directory
 fn get_model_cache_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".cache").join("qmd").join("models")
+    PathBuf::from(home)
+        .join(".cache")
+        .join("qmd")
+        .join("models")
 }
 
 /// Check if QMD models are downloaded
@@ -336,9 +515,21 @@ pub async fn qmd_model_status() -> Result<ModelsStatus, String> {
         }
     };
 
-    let embedding = check_model(embed_file, "Embedding (embeddinggemma-300M)", "Semantic search");
-    let generation = check_model(gen_file, "Query Expansion (qmd-query-expansion-1.7B)", "Semantic & Hybrid search");
-    let reranking = check_model(rerank_file, "Reranking (qwen3-reranker-0.6b)", "Hybrid search");
+    let embedding = check_model(
+        embed_file,
+        "Embedding (embeddinggemma-300M)",
+        "Semantic search",
+    );
+    let generation = check_model(
+        gen_file,
+        "Query Expansion (qmd-query-expansion-1.7B)",
+        "Semantic & Hybrid search",
+    );
+    let reranking = check_model(
+        rerank_file,
+        "Reranking (qwen3-reranker-0.6b)",
+        "Hybrid search",
+    );
 
     let semantic_ready = embedding.exists && generation.exists;
     let all_ready = semantic_ready && reranking.exists;

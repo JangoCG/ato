@@ -42,13 +42,7 @@ export function SettingsPage() {
     setSettings(updated);
   }, []);
 
-  // Derive collection name from folder path
-  const collectionName = useMemo(() => {
-    if (!settings.dataFolder) return null;
-    const parts = settings.dataFolder.replace(/\/+$/, "").split("/");
-    return parts[parts.length - 1] || null;
-  }, [settings.dataFolder]);
-  const displayCollectionName = qmdStatus?.collection_name ?? settings.qmdCollectionName ?? collectionName;
+  const displayCollectionName = qmdStatus?.collection_name ?? settings.qmdCollectionName;
 
   // Check QMD status when dataFolder changes
   useEffect(() => {
@@ -72,8 +66,8 @@ export function SettingsPage() {
           }
           setQmdStatus(status);
         } else if (status.available && !status.collection_exists) {
-          // No collection exists - create one (uses folder name by default)
-          const ensured = await ensureQmdCollection(dataFolder);
+          // No collection exists - create one (backend handles naming/persistence)
+          const ensured = await ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined);
           if (!cancelled) {
             setQmdStatus(ensured);
             // Save the created collection name
@@ -224,12 +218,8 @@ export function SettingsPage() {
 
     // Auto-detect Obsidian vault and import attachment settings
     const updates = await getFolderSettings(selected);
-    // Don't set qmdCollectionName here - let the QMD status check find existing collection
-    // or create one with the derived name if none exists
-    updateSettings({
-      ...updates,
-      qmdCollectionName: null, // Reset so QMD status check can find existing collection
-    });
+    // Update settings with new folder (qmdCollectionName will be resolved by useEffect)
+    updateSettings({ ...updates, qmdCollectionName: null });
   }, [settings.dataFolder, updateSettings]);
 
   const showLight = settings.appearance === "system" || settings.appearance === "light";
@@ -390,7 +380,7 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <p className="text-text-subtlest text-xs mt-1">
-                  Press <kbd className="px-1 py-0.5 bg-surface-highlight rounded border border-border text-[10px]">Cmd+K</kbd> to search. Collection name is derived from folder name.
+                  Press <kbd className="px-1 py-0.5 bg-surface-highlight rounded border border-border text-[10px]">Cmd+K</kbd> to search. Collection name is derived from the folder path.
                 </p>
               </div>
             )}
@@ -410,9 +400,8 @@ export function SettingsPage() {
                       type="button"
                       onClick={() => !modelStatus.embedding.exists && setShowModelModal(true)}
                       disabled={modelStatus.embedding.exists}
-                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
-                        !modelStatus.embedding.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
-                      }`}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${!modelStatus.embedding.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         {modelStatus.embedding.exists ? (
@@ -431,9 +420,8 @@ export function SettingsPage() {
                       type="button"
                       onClick={() => !modelStatus.generation.exists && setShowModelModal(true)}
                       disabled={modelStatus.generation.exists}
-                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
-                        !modelStatus.generation.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
-                      }`}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${!modelStatus.generation.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         {modelStatus.generation.exists ? (
@@ -452,9 +440,8 @@ export function SettingsPage() {
                       type="button"
                       onClick={() => !modelStatus.reranking.exists && setShowModelModal(true)}
                       disabled={modelStatus.reranking.exists}
-                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
-                        !modelStatus.reranking.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
-                      }`}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${!modelStatus.reranking.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         {modelStatus.reranking.exists ? (
@@ -531,11 +518,10 @@ export function SettingsPage() {
                       type="button"
                       onClick={handleStartEmbedding}
                       disabled={!modelStatus?.semantic_ready || !qmdStatus?.collection_exists}
-                      className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                        modelStatus?.semantic_ready && qmdStatus?.collection_exists
-                          ? 'bg-primary text-white hover:bg-primary/90'
-                          : 'bg-surface-highlight text-text-subtle cursor-not-allowed'
-                      }`}
+                      className={`px-3 py-1.5 text-xs rounded-md transition-colors ${modelStatus?.semantic_ready && qmdStatus?.collection_exists
+                        ? 'bg-primary text-white hover:bg-primary/90'
+                        : 'bg-surface-highlight text-text-subtle cursor-not-allowed'
+                        }`}
                     >
                       {vectorStatus?.has_vectors ? 'Update Index' : 'Create Index'}
                     </button>
@@ -551,8 +537,8 @@ export function SettingsPage() {
                 {!modelStatus?.semantic_ready
                   ? "Install AI models first to enable vector indexing."
                   : !qmdStatus?.collection_exists
-                  ? "Index your notes collection first to enable vector indexing."
-                  : "Creates vector embeddings for semantic search. This may take a while for large collections."}
+                    ? "Index your notes collection first to enable vector indexing."
+                    : "Creates vector embeddings for semantic search. This may take a while for large collections."}
               </p>
             </div>
           </div>
