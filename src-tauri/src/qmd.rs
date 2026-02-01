@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
+use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct QmdSearchResult {
@@ -63,34 +64,49 @@ async fn run_qmd_command(
     let mut full_args: Vec<String> = vec![qmd_script_str];
     full_args.extend(args.iter().map(|s| s.to_string()));
 
+    let is_sqlite_busy = |stdout: &str, stderr: &str| -> bool {
+        let has_busy = |text: &str| text.contains("SQLITE_BUSY") || text.contains("database is locked");
+        has_busy(stdout) || has_busy(stderr)
+    };
+
     // Try sidecar first (production), fall back to system bun (development)
     let shell = app.shell();
+    let mut attempt = 0u8;
+    let mut delay_ms = 150u64;
 
-    if let Ok(sidecar) = shell.sidecar("bun") {
-        let output = sidecar
-            .args(&full_args)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to execute bun sidecar: {}", e))?;
+    loop {
+        let (stdout, stderr, success) = if let Ok(sidecar) = shell.sidecar("bun") {
+            let output = sidecar
+                .args(&full_args)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to execute bun sidecar: {}", e))?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let success = output.status.success();
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let success = output.status.success();
+            (stdout, stderr, success)
+        } else {
+            // Fall back to system bun for development
+            use std::process::Command;
+            let result = Command::new("bun")
+                .args(&full_args)
+                .output()
+                .map_err(|e| format!("Failed to execute system bun: {}", e))?;
 
-        Ok((stdout, stderr, success))
-    } else {
-        // Fall back to system bun for development
-        use std::process::Command;
-        let result = Command::new("bun")
-            .args(&full_args)
-            .output()
-            .map_err(|e| format!("Failed to execute system bun: {}", e))?;
+            let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+            let success = result.status.success();
+            (stdout, stderr, success)
+        };
 
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-        let success = result.status.success();
+        if success || !is_sqlite_busy(&stdout, &stderr) || attempt >= 4 {
+            return Ok((stdout, stderr, success));
+        }
 
-        Ok((stdout, stderr, success))
+        attempt += 1;
+        sleep(Duration::from_millis(delay_ms)).await;
+        delay_ms = std::cmp::min(delay_ms * 2, 1200);
     }
 }
 
