@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Search, FileText, Loader2, AlertCircle } from "lucide-react";
-import { useQmdSearch, checkVectorStatus, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
+import { useQmdSearch, checkVectorStatus, ensureQmdCollection, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
 
 
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectFile: (filePath: string, lineNumber?: number) => void;
-
+  vaultPath?: string;
   collectionName?: string | null;
 }
 
@@ -18,13 +18,97 @@ const ALL_SEARCH_MODES: { value: SearchMode; label: string; description: string 
   { value: "query", label: "Hybrid", description: "LLM-enhanced search" },
 ];
 
-export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: SearchModalProps) {
+export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath, collectionName }: SearchModalProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("search");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [vectorIndexReady, setVectorIndexReady] = useState<boolean>(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [size, setSize] = useState({ width: 600, height: 400 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const resizeStartRef = useRef({ width: 0, height: 0, x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Handle dragging
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
+    // Don't drag if clicking input or select
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    };
+    e.preventDefault();
+  }, [position]);
+
+  // Handle resizing
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    resizeStartRef.current = {
+      width: size.width,
+      height: size.height,
+      x: e.clientX,
+      y: e.clientY
+    };
+    e.preventDefault();
+    e.stopPropagation();
+  }, [size]);
+
+  useEffect(() => {
+    if (!isDragging && !isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        setPosition({
+          x: e.clientX - dragStartRef.current.x,
+          y: e.clientY - dragStartRef.current.y
+        });
+      } else if (isResizing) {
+        const deltaX = e.clientX - resizeStartRef.current.x;
+        const deltaY = e.clientY - resizeStartRef.current.y;
+        setSize({
+          width: Math.max(400, resizeStartRef.current.width + deltaX),
+          height: Math.max(300, resizeStartRef.current.height + deltaY)
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, isResizing]);
+
+  // Sync index when modal opens
+  useEffect(() => {
+    if (!isOpen || !vaultPath) return;
+
+    // Reset position and default size when opening
+    setPosition({ x: 0, y: 0 });
+    setSize({ width: 600, height: 400 });
+
+    ensureQmdCollection(vaultPath, collectionName ?? undefined)
+      .catch((err) => console.warn("Failed to sync index on open:", err));
+
+    checkVectorStatus().then((status) => {
+      setVectorIndexReady(status.has_vectors);
+    }).catch(() => {
+      setVectorIndexReady(false);
+    });
+  }, [isOpen, vaultPath, collectionName]);
 
   // Only show semantic modes if vector index exists
   const availableModes = useMemo(() => {
@@ -48,10 +132,14 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
 
   // Search when query or mode changes
   useEffect(() => {
-    if (isOpen && query.trim()) {
-      search(query, mode);
+    if (isOpen) {
+      if (query.trim()) {
+        search(query, mode);
+      } else {
+        clearResults();
+      }
     }
-  }, [query, mode, isOpen, search]);
+  }, [query, mode, isOpen, search, clearResults]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -68,17 +156,6 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
   useEffect(() => {
     setSelectedIndex(0);
   }, [results]);
-
-  // Check vector index status when modal opens
-  useEffect(() => {
-    if (!isOpen) return;
-
-    checkVectorStatus().then((status) => {
-      setVectorIndexReady(status.has_vectors);
-    }).catch(() => {
-      setVectorIndexReady(false);
-    });
-  }, [isOpen]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -171,25 +248,35 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
 
         {/* Modal */}
         <div
-          className="relative w-full max-w-[600px] mx-4 bg-surface border border-border rounded-lg shadow-2xl overflow-hidden"
+          ref={modalRef}
+          className="relative mx-4 bg-surface border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col"
+          style={{
+            transform: `translate(${position.x}px, ${position.y}px)`,
+            width: `${size.width}px`,
+            height: `${size.height}px`
+          }}
           role="dialog"
           aria-modal="true"
           aria-label="Search files"
           onKeyDown={handleKeyDown}
         >
-          {/* Search input */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+          {/* Search input (Draggable header) */}
+          <div
+            className="flex items-center gap-3 px-4 py-3 border-b border-border cursor-move select-none flex-shrink-0"
+            onMouseDown={handleMouseDown}
+          >
             <Search className="w-5 h-5 text-textSubtle flex-shrink-0" />
             <input
               ref={inputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()} // Prevent dragging when clicking input
               placeholder="Search documents..."
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
-              className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-textSubtlest text-base"
+              className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-textSubtlest text-base cursor-text"
               aria-label="Search query"
             />
             {isLoading && (
@@ -200,6 +287,7 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as SearchMode)}
+                onMouseDown={(e) => e.stopPropagation()} // Prevent dragging when clicking select
                 className="bg-surfaceHighlight border border-border rounded px-2 py-1 text-sm text-text outline-none cursor-pointer"
                 aria-label="Search mode"
               >
@@ -213,14 +301,14 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
           </div>
 
           {/* Mode description */}
-          <div className="px-4 py-2 text-xs text-textSubtlest border-b border-border bg-surfaceHighlight/50">
+          <div className="px-4 py-2 text-xs text-textSubtlest border-b border-border bg-surfaceHighlight/50 flex-shrink-0">
             {availableModes.find((m) => m.value === mode)?.description}
           </div>
 
           {/* Results */}
           <div
             ref={listRef}
-            className="max-h-[400px] overflow-y-auto"
+            className="flex-1 overflow-y-auto"
             role="listbox"
             aria-label="Search results"
           >
@@ -283,7 +371,7 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-2 border-t border-border bg-surfaceHighlight/50 flex items-center justify-between text-xs text-textSubtlest">
+          <div className="px-4 py-2 border-t border-border bg-surfaceHighlight/50 flex items-center justify-between text-xs text-textSubtlest flex-shrink-0 relative">
             <div className="flex items-center gap-4">
               <span>
                 <kbd className="px-1.5 py-0.5 bg-surface rounded border border-border">↑</kbd>
@@ -300,13 +388,21 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
               </span>
             </div>
             {results.length > 0 && (
-              <span>{results.length} results</span>
+              <span className="mr-4">{results.length} results</span>
             )}
+
+            {/* Resize handle (bottom-right) */}
+            <div
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-center justify-center group"
+              onMouseDown={handleResizeStart}
+            >
+              <div className="w-1.5 h-1.5 border-r border-b border-textSubtlest group-hover:border-textSubtle transition-colors" />
+            </div>
           </div>
         </div>
       </div>
     );
-  }, [isOpen, query, mode, results, selectedIndex, isLoading, error, handleKeyDown, handleSelectResult, onClose, availableModes]);
+  }, [isOpen, query, mode, results, selectedIndex, isLoading, error, handleKeyDown, handleSelectResult, onClose, availableModes, position, handleMouseDown, size, handleResizeStart]);
 
   return createPortal(modalContent, document.body);
 }

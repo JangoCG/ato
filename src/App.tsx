@@ -559,6 +559,10 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         e.preventDefault();
         setIsFindInFileOpen((prev) => !prev);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        openSettings();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -1313,12 +1317,11 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         </div>
       </div>
 
-      {/* Search Modal */}
       <SearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectFile={openFile}
-
+        vaultPath={dataFolder}
         collectionName={settings.qmdCollectionName ?? undefined}
       />
     </div>
