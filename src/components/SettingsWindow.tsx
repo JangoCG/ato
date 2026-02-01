@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { FolderOpen, Link, Moon, Palette, Settings as SettingsIcon, Sun } from "lucide-react";
+import { FolderOpen, Link, Moon, Palette, Settings as SettingsIcon, Sun, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
@@ -8,6 +8,7 @@ import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
 import type { ResizeHandleEvent } from "./ResizeHandle";
 import { ResizeHandle } from "./ResizeHandle";
+import { checkQmdStatus, type QmdStatus } from "../hooks/useQmdSearch";
 
 export type ThemeDefinition = {
   id: string;
@@ -25,6 +26,28 @@ export function SettingsPage() {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const startWidth = useRef<number | null>(null);
+  const [qmdStatus, setQmdStatus] = useState<QmdStatus | null>(null);
+  const [qmdLoading, setQmdLoading] = useState(false);
+
+  // Derive collection name from folder path
+  const collectionName = useMemo(() => {
+    if (!settings.dataFolder) return null;
+    const parts = settings.dataFolder.replace(/\/+$/, "").split("/");
+    return parts[parts.length - 1] || null;
+  }, [settings.dataFolder]);
+
+  // Check QMD status when dataFolder changes
+  useEffect(() => {
+    if (!settings.dataFolder) {
+      setQmdStatus(null);
+      return;
+    }
+    setQmdLoading(true);
+    checkQmdStatus(settings.dataFolder)
+      .then(setQmdStatus)
+      .catch(() => setQmdStatus(null))
+      .finally(() => setQmdLoading(false));
+  }, [settings.dataFolder]);
 
   // Apply theme whenever settings change
   useEffect(() => {
@@ -218,6 +241,40 @@ export function SettingsPage() {
                 </button>
               </div>
             </div>
+
+            {/* QMD Search Collection */}
+            {settings.dataFolder && (
+              <div className="x-theme-input w-full flex-row gap-0.5 mt-2">
+                <label className="text-text-subtle text-sm mb-0.5 block">Search Collection (QMD)</label>
+                <div className="flex flex-row gap-2 w-full rounded-md text-text text-sm border border-border items-center px-3 py-2">
+                  <Search className="h-4 w-4 text-text-subtle flex-shrink-0" />
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="font-mono">{collectionName}</span>
+                    {qmdLoading ? (
+                      <Loader2 className="h-4 w-4 text-text-subtle animate-spin" />
+                    ) : qmdStatus?.collection_exists ? (
+                      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                        <CheckCircle className="h-3 w-3" />
+                        indexed
+                      </span>
+                    ) : qmdStatus?.available ? (
+                      <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                        <XCircle className="h-3 w-3" />
+                        not indexed
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs text-text-subtle">
+                        <XCircle className="h-3 w-3" />
+                        QMD unavailable
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="text-text-subtlest text-xs mt-1">
+                  Press <kbd className="px-1 py-0.5 bg-surface-highlight rounded border border-border text-[10px]">Cmd+K</kbd> to search. Collection name is derived from folder name.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
