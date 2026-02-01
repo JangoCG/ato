@@ -2,6 +2,7 @@
 
 use tauri::{Manager, RunEvent, WebviewWindow};
 
+mod qmd;
 mod window;
 
 #[cfg(target_os = "macos")]
@@ -43,7 +44,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, open_settings_window]);
+        .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            open_settings_window,
+            qmd::qmd_search,
+            qmd::qmd_status,
+            qmd::qmd_ensure_collection,
+        ]);
 
     #[cfg(target_os = "macos")]
     {

@@ -20,6 +20,10 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Tauri sidecar binaries (downloaded at build time)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
 *.suo
 *.ntvs*
 *.njsproj

@@ -1,0 +1,2 @@
+# This directory contains Bun binaries downloaded at build time.
+# Run scripts/download-bun.sh to download binaries for your platform.
