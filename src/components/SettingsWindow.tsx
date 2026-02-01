@@ -313,7 +313,14 @@ export function SettingsPage() {
                   </div>
                 ) : modelStatus ? (
                   <>
-                    <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => !modelStatus.embedding.exists && setShowModelModal(true)}
+                      disabled={modelStatus.embedding.exists}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
+                        !modelStatus.embedding.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         {modelStatus.embedding.exists ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -323,11 +330,18 @@ export function SettingsPage() {
                         <span>Embedding Model</span>
                         <span className="text-text-subtlest text-xs">(~329MB)</span>
                       </div>
-                      <span className={`text-xs ${modelStatus.embedding.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
-                        {modelStatus.embedding.exists ? 'Installed' : 'Not installed'}
+                      <span className={`text-xs ${modelStatus.embedding.exists ? 'text-green-600 dark:text-green-400' : 'text-primary hover:underline'}`}>
+                        {modelStatus.embedding.exists ? 'Installed' : 'Click to install'}
                       </span>
-                    </div>
-                    <div className="flex items-center justify-between">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => !modelStatus.generation.exists && setShowModelModal(true)}
+                      disabled={modelStatus.generation.exists}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
+                        !modelStatus.generation.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         {modelStatus.generation.exists ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -337,11 +351,18 @@ export function SettingsPage() {
                         <span>Query Expansion Model</span>
                         <span className="text-text-subtlest text-xs">(~1.3GB)</span>
                       </div>
-                      <span className={`text-xs ${modelStatus.generation.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
-                        {modelStatus.generation.exists ? 'Installed' : 'Not installed'}
+                      <span className={`text-xs ${modelStatus.generation.exists ? 'text-green-600 dark:text-green-400' : 'text-primary hover:underline'}`}>
+                        {modelStatus.generation.exists ? 'Installed' : 'Click to install'}
                       </span>
-                    </div>
-                    <div className="flex items-center justify-between">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => !modelStatus.reranking.exists && setShowModelModal(true)}
+                      disabled={modelStatus.reranking.exists}
+                      className={`flex items-center justify-between w-full text-left rounded-md px-2 py-1.5 -mx-2 transition-colors ${
+                        !modelStatus.reranking.exists ? 'hover:bg-surface-highlight cursor-pointer' : 'cursor-default'
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         {modelStatus.reranking.exists ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
@@ -351,19 +372,10 @@ export function SettingsPage() {
                         <span>Reranking Model</span>
                         <span className="text-text-subtlest text-xs">(~650MB)</span>
                       </div>
-                      <span className={`text-xs ${modelStatus.reranking.exists ? 'text-green-600 dark:text-green-400' : 'text-text-subtle'}`}>
-                        {modelStatus.reranking.exists ? 'Installed' : 'Not installed'}
+                      <span className={`text-xs ${modelStatus.reranking.exists ? 'text-green-600 dark:text-green-400' : 'text-primary hover:underline'}`}>
+                        {modelStatus.reranking.exists ? 'Installed' : 'Click to install'}
                       </span>
-                    </div>
-                    {!modelStatus.semantic_ready && (
-                      <button
-                        type="button"
-                        onClick={() => setShowModelModal(true)}
-                        className="mt-2 px-3 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90 self-start"
-                      >
-                        Download Models
-                      </button>
-                    )}
+                    </button>
                   </>
                 ) : (
                   <div className="text-text-subtle">Unable to check model status</div>
