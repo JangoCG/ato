@@ -150,8 +150,14 @@ pub async fn qmd_search(
         return Err(format!("qmd search failed: {}", stderr));
     }
 
+    // Handle "No results found." output from QMD
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() || trimmed == "No results found." {
+        return Ok(vec![]);
+    }
+
     // Parse JSON output - QMD outputs a JSON array
-    let results: Vec<QmdSearchResult> = serde_json::from_str(&stdout)
+    let results: Vec<QmdSearchResult> = serde_json::from_str(trimmed)
         .map_err(|e| format!("Failed to parse qmd output: {} (output: {})", e, stdout))?;
 
     Ok(results)

@@ -8,7 +8,7 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Slice } from "@milkdown/prose/model";
 import { TextSelection } from "@milkdown/prose/state";
-import { SquarePen, FolderPlus, Search, Settings } from "lucide-react";
+import { SquarePen, FolderPlus, Search, Settings, Command } from "lucide-react";
 import { writeTextFile, readTextFile, readDir, mkdir, exists, rename, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
@@ -22,6 +22,8 @@ import type { ResizeHandleEvent } from "./components/ResizeHandle";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
+import { SearchModal } from "./components/SearchModal";
+import { ensureQmdCollection } from "./hooks/useQmdSearch";
 import {
   findNodeById,
   getChildrenForParent,
@@ -368,8 +370,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [treeItems, setTreeItems] = useState<FileNode[]>([]);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const [sidebarFilter, setSidebarFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [content, setContent] = useState(defaultMarkdown);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [selectTitleOnMount, setSelectTitleOnMount] = useState(false);
@@ -460,6 +462,25 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
   // Fetch app version on mount
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
+  }, []);
+
+  // Initialize QMD collection for this vault
+  useEffect(() => {
+    ensureQmdCollection(dataFolder).catch((err) => {
+      console.warn("Failed to initialize QMD collection:", err);
+    });
+  }, [dataFolder]);
+
+  // Keyboard shortcut for search (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -1097,17 +1118,17 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
         className="x-theme-sidebar h-full grid grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[var(--sidebarSurface)] border-r border-[var(--sidebarBorder)]"
       >
         <div className="w-full pl-3 pr-0.5 pt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center">
-          <div className="flex items-center gap-2 text-textSubtle">
+          <button
+            className="flex items-center gap-2 text-textSubtle hover:text-text cursor-pointer text-[13px] py-1"
+            onClick={() => setIsSearchOpen(true)}
+            aria-label="Search documents"
+          >
             <Search size={14} />
-            <input
-              type="text"
-              className="bg-transparent border-0 outline-none text-[13px] w-full text-text placeholder:text-textSubtlest"
-              value={sidebarFilter}
-              onChange={(event) => setSidebarFilter(event.target.value)}
-              placeholder="Search"
-              aria-label="Filter files"
-            />
-          </div>
+            <span className="text-textSubtlest">Search</span>
+            <span className="ml-auto text-[11px] text-textSubtlest flex items-center gap-0.5">
+              <Command size={11} />K
+            </span>
+          </button>
           <div className="flex gap-0.5">
             <button
               className="h-7 w-7 flex items-center justify-center rounded text-textSubtle cursor-pointer hover:text-text hover:bg-surfaceHighlight"
@@ -1130,7 +1151,7 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
             items={treeItems}
             collapsedIds={collapsedIds}
             activeId={selectedId}
-            filterText={sidebarFilter}
+            filterText=""
             onSelect={(id) => {
               const node = findNodeById(treeItems, id);
               if (!node) return;
@@ -1201,6 +1222,14 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
           )}
         </div>
       </div>
+
+      {/* Search Modal */}
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelectFile={openFile}
+        vaultPath={dataFolder}
+      />
     </div>
   );
 }

@@ -29,7 +29,7 @@
       "devDependencies": {
         "@tailwindcss/container-queries": "^0.1.1",
         "@tailwindcss/typography": "^0.5.19",
-        "@tauri-apps/cli": "^2",
+        "@tauri-apps/cli": "^2.9.6",
         "@types/react": "^18.3.1",
         "@types/react-dom": "^18.3.1",
         "@vitejs/plugin-react": "^4.3.4",
