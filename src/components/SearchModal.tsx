@@ -120,22 +120,22 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.target instanceof HTMLSelectElement) return;
       switch (e.key) {
         case "ArrowDown":
+          if (results.length === 0) return;
           e.preventDefault();
-          if (results.length > 0) {
-            setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
-          }
+          setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
           break;
         case "ArrowUp":
+          if (results.length === 0) return;
           e.preventDefault();
           setSelectedIndex((prev) => Math.max(prev - 1, 0));
           break;
         case "Enter":
+          if (!results[selectedIndex]) return;
           e.preventDefault();
-          if (results[selectedIndex]) {
-            handleSelectResult(results[selectedIndex]);
-          }
+          handleSelectResult(results[selectedIndex]);
           break;
         case "Escape":
           e.preventDefault();
@@ -177,6 +177,7 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
           role="dialog"
           aria-modal="true"
           aria-label="Search files"
+          onKeyDown={handleKeyDown}
         >
           {/* Search input */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
@@ -186,7 +187,6 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
               placeholder="Search documents..."
               className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-textSubtlest text-base"
               aria-label="Search query"
@@ -247,8 +247,8 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
                 key={result.docid}
                 className={`w-full text-left px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors ${
                   index === selectedIndex
-                    ? "bg-blue-500/20 dark:bg-blue-400/20"
-                    : "hover:bg-surfaceHighlight"
+                    ? "bg-surface-active text-text"
+                    : "hover:bg-surface-highlight"
                 }`}
                 onClick={() => handleSelectResult(result)}
                 onMouseEnter={() => setSelectedIndex(index)}
