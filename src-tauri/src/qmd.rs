@@ -22,26 +22,36 @@ pub struct QmdStatus {
 
 /// Get the path to the bundled QMD script
 fn get_qmd_script_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+    // In production: resources are bundled at Contents/Resources/_up_/qmd/
+    if let Ok(resource_path) = app.path().resource_dir() {
+        let bundled_path = resource_path
+            .join("_up_")
+            .join("qmd")
+            .join("src")
+            .join("qmd.ts");
 
-    // Tauri preserves relative paths: ../qmd/ becomes _up_/qmd/
-    let qmd_path = resource_path
-        .join("_up_")
-        .join("qmd")
-        .join("src")
-        .join("qmd.ts");
-
-    if qmd_path.exists() {
-        Ok(qmd_path)
-    } else {
-        Err(format!("QMD script not found at {:?}", qmd_path))
+        if bundled_path.exists() {
+            return Ok(bundled_path);
+        }
     }
+
+    // In development: use the source qmd directory relative to the project root
+    // The Tauri app runs from src-tauri/, so ../qmd/ is the qmd directory
+    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.join("qmd").join("src").join("qmd.ts"))
+        .unwrap_or_default();
+
+    if dev_path.exists() {
+        return Ok(dev_path);
+    }
+
+    Err(format!(
+        "QMD script not found. Checked bundled and dev paths."
+    ))
 }
 
-/// Run a QMD command using the bundled Bun sidecar
+/// Run a QMD command using the bundled Bun sidecar (or system bun in dev mode)
 async fn run_qmd_command(
     app: &AppHandle,
     args: Vec<&str>,
@@ -53,22 +63,35 @@ async fn run_qmd_command(
     let mut full_args: Vec<String> = vec![qmd_script_str];
     full_args.extend(args.iter().map(|s| s.to_string()));
 
+    // Try sidecar first (production), fall back to system bun (development)
     let shell = app.shell();
-    let sidecar = shell
-        .sidecar("bun")
-        .map_err(|e| format!("Failed to create sidecar: {}", e))?;
 
-    let output = sidecar
-        .args(&full_args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to execute bun sidecar: {}", e))?;
+    if let Ok(sidecar) = shell.sidecar("bun") {
+        let output = sidecar
+            .args(&full_args)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to execute bun sidecar: {}", e))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let success = output.status.success();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let success = output.status.success();
 
-    Ok((stdout, stderr, success))
+        Ok((stdout, stderr, success))
+    } else {
+        // Fall back to system bun for development
+        use std::process::Command;
+        let result = Command::new("bun")
+            .args(&full_args)
+            .output()
+            .map_err(|e| format!("Failed to execute system bun: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        let success = result.status.success();
+
+        Ok((stdout, stderr, success))
+    }
 }
 
 /// Search using bundled QMD
