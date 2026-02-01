@@ -15,9 +15,17 @@
           "name": "binaries/bun",
           "sidecar": true,
           "args": true
+        },
+        {
+          "name": "bun",
+          "cmd": "bun",
+          "args": true
         }
       ]
     },
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
     "opener:default",
     "os:default",
     "core:window:allow-start-dragging",

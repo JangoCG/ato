@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Search, FileText, Loader2, AlertCircle } from "lucide-react";
-import { useQmdSearch, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
+import { useQmdSearch, checkModelStatus, type SearchMode, type QmdSearchResult } from "../hooks/useQmdSearch";
+import { ModelDownloadModal } from "./ModelDownloadModal";
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("search");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showModelModal, setShowModelModal] = useState(false);
+  const [modelsReady, setModelsReady] = useState<boolean | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -39,9 +42,13 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
   // Search when query or mode changes
   useEffect(() => {
     if (isOpen && query.trim()) {
+      // Don't search if semantic modes and models aren't ready
+      if ((mode === "vsearch" || mode === "query") && modelsReady === false) {
+        return;
+      }
       search(query, mode);
     }
-  }, [query, mode, isOpen, search]);
+  }, [query, mode, isOpen, search, modelsReady]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -58,6 +65,25 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
   useEffect(() => {
     setSelectedIndex(0);
   }, [results]);
+
+  // Check model status when switching to semantic modes
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (mode === "vsearch" || mode === "query") {
+      checkModelStatus().then((status) => {
+        const ready = mode === "vsearch" ? status.semantic_ready : status.all_ready;
+        setModelsReady(ready);
+        if (!ready) {
+          setShowModelModal(true);
+        }
+      }).catch(() => {
+        setModelsReady(false);
+      });
+    } else {
+      setModelsReady(true);
+    }
+  }, [mode, isOpen]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -111,6 +137,21 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
     },
     [onSelectFile, onClose]
   );
+
+  const handleModelsReady = useCallback(() => {
+    setShowModelModal(false);
+    setModelsReady(true);
+    // Trigger search if there's a pending query
+    if (query.trim()) {
+      search(query, mode);
+    }
+  }, [query, mode, search]);
+
+  const handleModelModalClose = useCallback(() => {
+    setShowModelModal(false);
+    // Reset to fast search if user cancels model download
+    setMode("search");
+  }, []);
 
   const scoreToPercent = (score: number) => Math.round(score * 100);
 
@@ -268,5 +309,14 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
     );
   }, [isOpen, query, mode, results, selectedIndex, isLoading, error, handleKeyDown, handleSelectResult, onClose]);
 
-  return createPortal(modalContent, document.body);
+  return (
+    <>
+      {createPortal(modalContent, document.body)}
+      <ModelDownloadModal
+        isOpen={showModelModal}
+        onClose={handleModelModalClose}
+        onReady={handleModelsReady}
+      />
+    </>
+  );
 }

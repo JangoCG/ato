@@ -132,3 +132,39 @@ export async function ensureQmdCollection(
     collectionName,
   });
 }
+
+// Model status types
+export interface ModelInfo {
+  name: string;
+  filename: string;
+  exists: boolean;
+  size_bytes: number;
+  required_for: string;
+}
+
+export interface ModelsStatus {
+  embedding: ModelInfo;
+  generation: ModelInfo;
+  reranking: ModelInfo;
+  all_ready: boolean;
+  semantic_ready: boolean;
+}
+
+export interface DownloadProgress {
+  model: string;
+  progress: number;
+  downloaded_mb: number;
+  total_mb: number;
+  speed: string;
+  eta: string;
+  done: boolean;
+  error: string | null;
+}
+
+export async function checkModelStatus(): Promise<ModelsStatus> {
+  return invoke<ModelsStatus>("qmd_model_status");
+}
+
+export async function downloadModels(): Promise<void> {
+  return invoke<void>("qmd_download_models");
+}

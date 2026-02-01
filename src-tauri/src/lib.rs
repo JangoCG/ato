@@ -51,6 +51,8 @@ pub fn run() {
             qmd::qmd_search,
             qmd::qmd_status,
             qmd::qmd_ensure_collection,
+            qmd::qmd_model_status,
+            qmd::qmd_download_models,
         ]);
 
     #[cfg(target_os = "macos")]
