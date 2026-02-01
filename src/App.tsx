@@ -21,7 +21,7 @@ import { SetupScreen } from "./components/SetupScreen";
 import { FindInFile } from "./components/FindInFile";
 import type { ResizeHandleEvent } from "./components/ResizeHandle";
 import { ResizeHandle } from "./components/ResizeHandle";
-import { deriveQmdCollectionName, getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
+import { getSettings, subscribeToSettings, type AppSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 import { SearchModal } from "./components/SearchModal";
 import { ensureQmdCollection } from "./hooks/useQmdSearch";
@@ -537,8 +537,8 @@ function EditorApp({ dataFolder }: { dataFolder: string }) {
 
   // Initialize QMD collection for this vault
   useEffect(() => {
-    const collectionName = settings.qmdCollectionName ?? deriveQmdCollectionName(dataFolder);
-    ensureQmdCollection(dataFolder, collectionName).catch((err) => {
+    // Don't pass derived name - let backend use folder name or find existing collection
+    ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined).catch((err) => {
       console.warn("Failed to initialize QMD collection:", err);
     });
   }, [dataFolder, settings.qmdCollectionName]);
@@ -1331,7 +1331,7 @@ function App() {
     setSettings((prev) => ({
       ...prev,
       dataFolder: folder,
-      qmdCollectionName: deriveQmdCollectionName(folder),
+      qmdCollectionName: null, // Let backend find/create correct collection
     }));
   }, []);
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { FolderOpen, Link, Moon, Palette, Settings as SettingsIcon, Sun, Search, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
-import { deriveQmdCollectionName, getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
+import { getSettings, saveSettings, subscribeToSettings, type AppSettings, type AttachmentLocation } from "../lib/settings";
 import { getFolderSettings } from "../lib/useObsidianImport";
 import { applyTheme } from "../lib/themes";
 import { HeaderSize } from "./HeaderSize";
@@ -64,13 +64,23 @@ export function SettingsPage() {
       try {
         const status = await checkQmdStatus(dataFolder);
         if (cancelled) return;
-        if (status.collection_exists && status.collection_name && settings.qmdCollectionName !== status.collection_name) {
-          updateSettings({ qmdCollectionName: status.collection_name });
-        }
 
-        if (status.available && !status.collection_exists) {
-          const ensured = await ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined);
-          if (!cancelled) setQmdStatus(ensured);
+        // If collection exists, use its name
+        if (status.collection_exists && status.collection_name) {
+          if (settings.qmdCollectionName !== status.collection_name) {
+            updateSettings({ qmdCollectionName: status.collection_name });
+          }
+          setQmdStatus(status);
+        } else if (status.available && !status.collection_exists) {
+          // No collection exists - create one (uses folder name by default)
+          const ensured = await ensureQmdCollection(dataFolder);
+          if (!cancelled) {
+            setQmdStatus(ensured);
+            // Save the created collection name
+            if (ensured.collection_name && settings.qmdCollectionName !== ensured.collection_name) {
+              updateSettings({ qmdCollectionName: ensured.collection_name });
+            }
+          }
         } else {
           setQmdStatus(status);
         }
@@ -203,14 +213,6 @@ export function SettingsPage() {
     setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
   }, []);
 
-  useEffect(() => {
-    if (!settings.dataFolder) return;
-    const derived = deriveQmdCollectionName(settings.dataFolder);
-    if (settings.qmdCollectionName !== derived) {
-      updateSettings({ qmdCollectionName: derived });
-    }
-  }, [settings.dataFolder, settings.qmdCollectionName, updateSettings]);
-
   const handleChangeFolder = useCallback(async () => {
     const selected = await open({
       directory: true,
@@ -222,9 +224,11 @@ export function SettingsPage() {
 
     // Auto-detect Obsidian vault and import attachment settings
     const updates = await getFolderSettings(selected);
+    // Don't set qmdCollectionName here - let the QMD status check find existing collection
+    // or create one with the derived name if none exists
     updateSettings({
       ...updates,
-      qmdCollectionName: deriveQmdCollectionName(selected),
+      qmdCollectionName: null, // Reset so QMD status check can find existing collection
     });
   }, [settings.dataFolder, updateSettings]);
 
