@@ -94,6 +94,12 @@ async fn run_qmd_command(
     }
 }
 
+async fn qmd_available(app: &AppHandle) -> Result<bool, String> {
+    // QMD doesn't implement --version; use --help as a lightweight availability check.
+    let (_stdout, _stderr, success) = run_qmd_command(app, vec!["--help"]).await?;
+    Ok(success)
+}
+
 /// Search using bundled QMD
 /// mode: "search" (BM25), "vsearch" (semantic), "query" (hybrid with LLM)
 #[tauri::command]
@@ -138,16 +144,12 @@ pub async fn qmd_search(
 /// Check QMD availability and collection status
 #[tauri::command]
 pub async fn qmd_status(app: AppHandle, vault_path: String) -> Result<QmdStatus, String> {
-    // Check if bundled QMD is available by running --version
-    let version_result = run_qmd_command(&app, vec!["--version"]).await;
-
-    let (available, version) = match version_result {
-        Ok((stdout, _, true)) => {
-            let v = stdout.trim().to_string();
-            (true, Some(v))
-        }
-        _ => (false, None),
+    // Check if bundled QMD is available by running --help
+    let available = match qmd_available(&app).await {
+        Ok(true) => true,
+        _ => false,
     };
+    let version = None;
 
     if !available {
         return Ok(QmdStatus {
@@ -205,9 +207,12 @@ pub async fn qmd_ensure_collection(
     collection_name: Option<String>,
 ) -> Result<QmdStatus, String> {
     // Check if bundled QMD is available
-    let version_result = run_qmd_command(&app, vec!["--version"]).await;
+    let available = match qmd_available(&app).await {
+        Ok(true) => true,
+        _ => false,
+    };
 
-    if version_result.is_err() || !version_result.as_ref().unwrap().2 {
+    if !available {
         return Err("Bundled QMD is not available".to_string());
     }
 
