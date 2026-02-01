@@ -188,6 +188,9 @@ export function SearchModal({ isOpen, onClose, onSelectFile, vaultPath }: Search
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search documents..."
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               className="flex-1 bg-transparent border-0 outline-none text-text placeholder:text-textSubtlest text-base"
               aria-label="Search query"
             />
