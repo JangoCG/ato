@@ -522,6 +522,7 @@ export function SettingsPage() {
         isOpen={showModelModal}
         onClose={() => setShowModelModal(false)}
         onReady={handleModelsReady}
+        autoStart
       />
     </div>
   );

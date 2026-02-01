@@ -13,6 +13,7 @@ interface ModelDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onReady: () => void;
+  autoStart?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -23,20 +24,36 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-export function ModelDownloadModal({ isOpen, onClose, onReady }: ModelDownloadModalProps) {
+export function ModelDownloadModal({ isOpen, onClose, onReady, autoStart = false }: ModelDownloadModalProps) {
   const [status, setStatus] = useState<ModelsStatus | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasAutoStarted, setHasAutoStarted] = useState(false);
 
   // Check model status when modal opens
   useEffect(() => {
     if (isOpen) {
+      setHasAutoStarted(false);
       checkModelStatus()
         .then(setStatus)
         .catch((e) => setError(String(e)));
     }
   }, [isOpen]);
+
+  // Auto-start download if requested
+  useEffect(() => {
+    if (isOpen && autoStart && status && !status.semantic_ready && !isDownloading && !hasAutoStarted) {
+      setHasAutoStarted(true);
+      setIsDownloading(true);
+      setError(null);
+      setProgress(null);
+      downloadModels().catch((e) => {
+        setError(String(e));
+        setIsDownloading(false);
+      });
+    }
+  }, [isOpen, autoStart, status, isDownloading, hasAutoStarted]);
 
   // Listen for download progress events
   useEffect(() => {
