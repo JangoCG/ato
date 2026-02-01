@@ -162,14 +162,12 @@ export function SearchModal({ isOpen, onClose, onSelectFile, collectionName }: S
     if (!isOpen) return null;
 
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) onClose();
-        }}
-      >
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
         {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/50" />
+        <div
+          className="absolute inset-0 bg-black/50"
+          onClick={onClose}
+        />
 
         {/* Modal */}
         <div
