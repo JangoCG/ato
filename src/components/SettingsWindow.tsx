@@ -37,6 +37,10 @@ export function SettingsPage() {
   const [vectorLoading, setVectorLoading] = useState(false);
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [embedProgress, setEmbedProgress] = useState<EmbedProgress | null>(null);
+  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
+    const updated = saveSettings(updates);
+    setSettings(updated);
+  }, []);
 
   // Derive collection name from folder path
   const collectionName = useMemo(() => {
@@ -60,6 +64,10 @@ export function SettingsPage() {
       try {
         const status = await checkQmdStatus(dataFolder);
         if (cancelled) return;
+        if (status.collection_exists && status.collection_name && settings.qmdCollectionName !== status.collection_name) {
+          updateSettings({ qmdCollectionName: status.collection_name });
+        }
+
         if (status.available && !status.collection_exists) {
           const ensured = await ensureQmdCollection(dataFolder, settings.qmdCollectionName ?? undefined);
           if (!cancelled) setQmdStatus(ensured);
@@ -77,7 +85,7 @@ export function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [settings.dataFolder, settings.qmdCollectionName]);
+  }, [settings.dataFolder, settings.qmdCollectionName, updateSettings]);
 
   // Check model status on mount
   useEffect(() => {
@@ -193,11 +201,6 @@ export function SettingsPage() {
 
   const resetWidth = useCallback(() => {
     setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
-  }, []);
-
-  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
-    const updated = saveSettings(updates);
-    setSettings(updated);
   }, []);
 
   useEffect(() => {

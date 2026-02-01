@@ -188,27 +188,42 @@ pub async fn qmd_status(app: AppHandle, vault_path: String) -> Result<QmdStatus,
     let list_result = run_qmd_command(&app, vec!["collection", "list"]).await;
 
     let mut collection_exists = false;
-    let mut collection_name = None;
+    let mut collection_name: Option<String> = None;
+    let mut current_collection: Option<String> = None;
 
     if let Ok((stdout, _, true)) = list_result {
         let normalized_vault = vault_path.trim_end_matches('/');
 
-        // Parse text output - format is like "name (qmd://name/)\n  Pattern: ...\n  Path: /actual/path"
+        // Parse text output - format is like:
+        // "name (qmd://name/)\n  Pattern: ...\n  Path: /actual/path"
         for line in stdout.lines() {
-            if line.contains(normalized_vault) {
-                collection_exists = true;
-                break;
+            let trimmed = line.trim();
+            if !trimmed.starts_with("Path:") && trimmed.contains("(qmd://") && !trimmed.starts_with("Pattern:") {
+                if let Some(name) = trimmed.split_whitespace().next() {
+                    current_collection = Some(name.to_string());
+                }
+                continue;
+            }
+
+            if let Some(path) = trimmed.strip_prefix("Path:") {
+                let path = path.trim().trim_end_matches('/');
+                if path == normalized_vault {
+                    collection_exists = true;
+                    if collection_name.is_none() {
+                        collection_name = current_collection.clone();
+                    }
+                }
             }
         }
 
         // Alternative: check if any collection name matches the folder name
-        let folder_name = std::path::Path::new(&vault_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        if !collection_exists {
+            let folder_name = std::path::Path::new(&vault_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
 
-        if !collection_exists && !folder_name.is_empty() {
-            if stdout.contains(&format!("{} (qmd://", folder_name)) {
+            if !folder_name.is_empty() && stdout.contains(&format!("{} (qmd://", folder_name)) {
                 collection_exists = true;
                 collection_name = Some(folder_name.to_string());
             }
