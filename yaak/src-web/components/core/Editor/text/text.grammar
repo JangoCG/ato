@@ -1,5 +1,0 @@
-@top Template { Text }
-
-@tokens {
-  Text { ![]+ }
-}

@@ -1,2 +1,0 @@
-ALTER TABLE settings
-    ADD COLUMN hide_window_controls BOOLEAN DEFAULT FALSE NOT NULL;

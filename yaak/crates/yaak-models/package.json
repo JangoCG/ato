@@ -1,6 +1,0 @@
-{
-  "name": "@yaakapp-internal/models",
-  "private": true,
-  "version": "1.0.0",
-  "main": "guest-js/index.ts"
-}
