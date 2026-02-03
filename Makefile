@@ -44,9 +44,12 @@ release:
 	git push && git push --tags; \
 	echo ""; \
 	echo "Creating GitHub release..."; \
+	cp "src-tauri/target/release/bundle/dmg/$(APP_NAME)_$${new_version}_aarch64.dmg" "src-tauri/target/release/bundle/dmg/$(APP_NAME)-macOS.dmg"; \
 	gh release create "v$$new_version" \
 		--title "$(APP_NAME) v$$new_version" \
 		--generate-notes \
-		"src-tauri/target/release/bundle/dmg/$(APP_NAME)_$${new_version}_aarch64.dmg#$(APP_NAME) for macOS"; \
+		"src-tauri/target/release/bundle/dmg/$(APP_NAME)-macOS.dmg#$(APP_NAME) for macOS"; \
 	echo ""; \
-	echo "Release v$$new_version complete!"
+	echo "Release v$$new_version complete!"; \
+	echo ""; \
+	echo "Direct download link: https://github.com/$$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/latest/download/$(APP_NAME)-macOS.dmg"
